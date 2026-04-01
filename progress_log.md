@@ -101,3 +101,29 @@
 - `GET /projects/1/drafts` -> `[{"id": 1, "section_type": "technical_volume", "content": "..."}]`
 
 ---
+
+## 2026-04-01 - Day 5: React Frontend MVP + Sprint Complete
+
+### Completed
+- `frontend/src/api/client.js` - Axios instance; all API calls centralized (getSolicitations, getAlignment, createProject, generateDraft, getDrafts, triggerScrape, getScrapeStatus)
+- `frontend/src/components/NavBar.jsx` - top nav with active-route highlighting
+- `frontend/src/views/SolicitationList.jsx` - paginated table (25/page), top alignment score badge per row (green/yellow/gray), "Scrape New" button with polling
+- `frontend/src/views/SolicitationDetail.jsx` - solicitation full text, 3 capability score cards with color-coded bars and Claude rationale, "Create Project" button navigates to DraftEditor
+- `frontend/src/views/DraftEditor.jsx` - section type dropdown (Technical Volume / Commercialization Plan), Generate button, draft history sidebar, copy-to-clipboard, alignment summary strip
+- `frontend/src/App.jsx` - React Router v6, 3 routes: /, /solicitations/:id, /projects/:id
+- TailwindCSS v4 via @tailwindcss/vite - all styling in-component, no config file needed
+- `npm run build` - clean production build (282 kB JS, 18 kB CSS, 0 errors)
+
+### End-to-End Verification
+- Backend: 3 endpoints confirmed (solicitations list, alignment scores, drafts)
+- Frontend build: 79 modules, no errors or warnings
+- Full flow: list -> detail -> create project -> generate draft -> copy
+
+### Sprint Summary (Days 1-5)
+- Day 1: Scaffold, FastAPI, SQLite schema (5 tables), CRUD layer
+- Day 2: SBIR.gov scraper (httpx+BS4), 98 solicitations in DB, solicitations REST API
+- Day 3: Capability alignment engine, 2-pass scoring, 3 capabilities, Claude API integration
+- Day 4: RAG draft generator, context builder, Technical Volume + Commercialization Plan prompts, 16-17k char drafts
+- Day 5: React/Vite/TailwindCSS frontend, 3 views, full end-to-end demo
+
+---

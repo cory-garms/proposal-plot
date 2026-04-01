@@ -1,57 +1,66 @@
 # HANDOFF
 
-**Last updated:** 2026-04-01 (Day 4 complete)
+**Last updated:** 2026-04-01 (Sprint complete - all 5 days done)
 
 ---
 
 ## Current State
 
-Days 1-4 complete. Full backend pipeline is working end-to-end.
-- 98 solicitations in DB, all scored
-- 3 capabilities seeded
-- 2 test projects created, 2 technical volume drafts generated (16-17k chars each)
-- Frontend is still a stub — that's Day 5
+MVP is complete and fully functional. Backend + frontend end-to-end demo works.
+
+- 98 solicitations scraped and scored
+- 3 capabilities seeded (Remote Sensing, 3D Point Clouds, Edge Computing)
+- 2 projects created with Technical Volume drafts (16-17k chars each)
+- React frontend: 3 views, fully wired to backend
 
 ---
 
-## What Was Built (Days 1-4)
+## How to Run
 
-- Full backend scaffold: FastAPI, SQLite schema (5 tables), CRUD layer
-- SBIR.gov scraper: httpx + BeautifulSoup, two-phase pipeline
-- Capability alignment: two-pass scoring (keyword gate + Claude API)
-- RAG draft generator: context builder + prompt templates + Claude claude-sonnet-4-6
-- REST API: solicitations, capabilities, alignment, projects, drafts
-
----
-
-## Start Day 5
-
-### Goal
-3-view React frontend that connects to all backend endpoints. Full local demo in browser.
-
-### Files to create
-- `frontend/src/api/client.js` - Axios instance, all API calls here
-- `frontend/src/components/NavBar.jsx`
-- `frontend/src/views/SolicitationList.jsx` - table + top alignment badge + "Scrape New" button
-- `frontend/src/views/SolicitationDetail.jsx` - full text + color-coded score cards
-- `frontend/src/views/DraftEditor.jsx` - section selector + Generate button + copy-to-clipboard
-- `frontend/src/App.jsx` - React Router v6 routes
-
-### Install needed
+### Backend
 ```bash
-export PATH="$HOME/.fnm:$PATH" && eval "$(fnm env)"
-cd frontend && npm install react-router-dom axios
+cd /home/cgarms/Projects/proposal_pilot
+source backend/.venv/bin/activate
+uvicorn backend.main:app --reload
+# http://localhost:8000/docs  <- interactive API docs
 ```
 
-### Color coding for alignment scores
-- >= 0.7 green
-- 0.4-0.69 yellow
-- < 0.4 red/gray
+### Frontend
+```bash
+export PATH="$HOME/.fnm:$PATH" && eval "$(fnm env)"
+cd frontend && npm run dev
+# http://localhost:5173
+```
 
-### Key solicitations to demo with
-- ID 81: Cognitive Mapping for Counter-WMD (DTRA254-002) - score 0.850 3D Point Clouds
-- ID 103: Shop Floor Human Detection (AF254-D0823) - score 0.850 3D Point Clouds
-- ID 50: Real-Time Detection and Tracking - score 0.700 Edge Computing
+### Seed + scrape fresh data
+```bash
+python -m backend.capabilities.seed_capabilities          # only needed once
+python backend/scraper/run_scrape.py --max-pages 10 --max-detail 100
+python -c "from backend.capabilities.aligner import run_alignment; run_alignment()"
+```
+
+---
+
+## Good Demo Solicitations
+
+| ID | Title | Top Score | Capability |
+|----|-------|-----------|------------|
+| 81 | Cognitive Mapping for Counter-WMD (DTRA254-002) | 0.850 | 3D Point Clouds |
+| 103 | Shop Floor Human Detection (AF254-D0823) | 0.850 | 3D Point Clouds |
+| 50 | Real-Time Detection and Tracking | 0.700 | Edge Computing |
+| 79 | PEO SOF Visual Augmentation Systems | 0.700 | Edge Computing |
+
+---
+
+## Next Sprint Ideas (Post-MVP)
+
+- **More agencies**: USDA, NASA, NSF solicitation scrapers
+- **Alignment re-run on demand**: per-solicitation re-score button in UI
+- **Draft editing**: inline editing of generated sections, save revisions
+- **Export**: PDF or DOCX export of full Technical Volume
+- **Agency filter**: filter solicitation list by agency in UI
+- **Deadline alerts**: flag solicitations with deadlines within 30 days
+- **SOTA validation**: auto-pull related papers from arXiv/Semantic Scholar to ground technical claims
 
 ---
 
@@ -64,17 +73,17 @@ cd frontend && npm install react-router-dom axios
 | GET | /solicitations/{id} | Single solicitation |
 | POST | /solicitations/scrape | Trigger background scrape |
 | GET | /solicitations/scrape/status | Scrape job status |
-| GET | /solicitations/{id}/alignment | Alignment scores for a solicitation |
+| GET | /solicitations/{id}/alignment | Alignment scores |
 | GET | /capabilities | List capabilities |
-| POST | /capabilities | Add new capability |
-| POST | /align/run | Trigger background alignment pass |
+| POST | /capabilities | Add capability |
+| POST | /align/run | Trigger alignment pass |
 | GET | /align/status | Alignment job status |
-| POST | /projects | Create project from solicitation |
-| GET | /projects/{id} | Get project + alignment scores |
-| POST | /projects/{id}/generate | Generate draft (body: section_type) |
-| GET | /projects/{id}/drafts | List all drafts for project |
+| POST | /projects | Create project |
+| GET | /projects/{id} | Get project + scores |
+| POST | /projects/{id}/generate | Generate draft section |
+| GET | /projects/{id}/drafts | List drafts |
 
-## Schema Reference
+## Schema
 
 ```
 solicitations(id, agency, title, topic_number, description, deadline, url UNIQUE, raw_html, scraped_at)
@@ -82,16 +91,4 @@ capabilities(id, name UNIQUE, description, keywords_json)
 projects(id, solicitation_id FK, title, status, created_at)
 drafts(id, project_id FK, section_type, content, model_version, generated_at)
 solicitation_capability_scores(solicitation_id FK, capability_id FK, score, rationale, scored_at)
-```
-
-## How to Run
-
-```bash
-# Backend
-source backend/.venv/bin/activate
-uvicorn backend.main:app --reload
-
-# Frontend (Day 5+)
-export PATH="$HOME/.fnm:$PATH" && eval "$(fnm env)"
-cd frontend && npm run dev
 ```

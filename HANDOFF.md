@@ -1,51 +1,60 @@
 # HANDOFF
 
-**Last updated:** 2026-04-01 (Day 2 complete)
+**Last updated:** 2026-04-01 (Day 3 complete)
 
 ---
 
 ## Current State
 
-Days 1-2 complete. The backend scrapes live SBIR.gov data and exposes it via REST.
-20 solicitations are currently in the DB (from a 2-page test scrape).
-Frontend is still a stub.
+Days 1-3 complete. The backend scrapes, stores, and scores solicitations.
+- 20 solicitations in DB (from 2-page test scrape)
+- 3 capabilities seeded with keyword lists
+- 60 alignment scores stored (5 Claude API calls, keyword filter blocked the rest)
+- Frontend is still a stub
 
 ---
 
-## What Was Built (Days 1-2)
+## What Was Built (Days 1-3)
 
 - Full backend scaffold: FastAPI, SQLite schema (5 tables), CRUD layer
-- SBIR.gov scraper: httpx + BeautifulSoup, two-phase (listing + detail pages)
-- REST API: `GET /solicitations`, `GET /solicitations/{id}`, `POST /scrape`, `GET /solicitations/scrape/status`
-- Frontend stub: React + Vite + TailwindCSS v4
+- SBIR.gov scraper: httpx + BeautifulSoup, two-phase pipeline
+- Capability alignment: two-pass scoring (keyword gate + Claude API), 3 capabilities seeded
+- REST API: solicitations, capabilities, alignment, scrape trigger
 
 ---
 
-## Start Day 3
+## Start Day 4
 
 ### Goal
-Score every solicitation against 3 capabilities using keyword pre-filter + Claude API semantic scoring.
+Generate Technical Volume and Commercialization Plan draft sections for a project via Claude API RAG pipeline.
 
 ### Files to create
-- `backend/capabilities/seed_capabilities.py`
-- `backend/capabilities/prompts.py`
-- `backend/capabilities/aligner.py`
-- `backend/routers/capabilities.py`
-- Register `capabilities` router in `backend/main.py`
+- `backend/rag/context_builder.py`
+- `backend/rag/prompts.py`
+- `backend/rag/generator.py`
+- `backend/routers/projects.py`
+- Register `projects` router in `backend/main.py`
 
-### Capabilities to seed
-1. **Remote Sensing** - keywords: SAR, LiDAR, hyperspectral, satellite imagery, EO/IR, radar, multispectral
-2. **3D Point Clouds** - keywords: LiDAR, photogrammetry, mesh reconstruction, voxelization, SLAM, point cloud
-3. **Edge Computing** - keywords: embedded systems, FPGA, low-latency inference, on-device ML, IoT, edge AI, real-time processing
+### RAG context assembly
+`context_builder.py` should pull:
+1. Full solicitation text (title + description + topic_number + agency + deadline)
+2. All capability scores for the solicitation (score + rationale for each)
+3. Capability descriptions and keywords for top-scoring capabilities
 
-### Alignment logic (two-pass)
-1. Keyword match: score 0-1 based on keyword hits in title + description
-2. If keyword_score > 0.2: call Claude API for semantic score (0-1) + one-sentence rationale
-3. Store result in `solicitation_capability_scores`
+### Prompt templates
+- `TECHNICAL_VOLUME_PROMPT` - generates Background, Innovation, Technical Approach, Team stubs, Timeline
+- `COMMERCIALIZATION_PROMPT` - generates Phase II commercial plan
 
-### API key required
-Set `ANTHROPIC_API_KEY` in `.env` before running Day 3.
-Use model `claude-sonnet-4-6`.
+### Generator
+- `generate_draft(project_id, section_type)` -> pulls project -> solicitation -> scores -> builds context -> calls Claude -> persists to `drafts`
+- Model: `claude-sonnet-4-6`, `max_tokens=4096`
+- Section types: `"technical_volume"`, `"commercialization_plan"`
+
+### Routes
+- `POST /projects` body: `{"solicitation_id": int, "title": str}`
+- `GET /projects/{id}`
+- `POST /projects/{id}/generate` body: `{"section_type": "technical_volume"}`
+- `GET /projects/{id}/drafts`
 
 ---
 
@@ -56,12 +65,11 @@ Use model `claude-sonnet-4-6`.
 source backend/.venv/bin/activate
 uvicorn backend.main:app --reload
 
-# Scrape more data
-python backend/scraper/run_scrape.py --max-pages 5 --max-detail 50
+# Scrape more data (more topics = better alignment diversity)
+python backend/scraper/run_scrape.py --max-pages 10 --max-detail 100
 
-# Frontend (requires Node 20 via fnm)
-export PATH="$HOME/.fnm:$PATH" && eval "$(fnm env)"
-cd frontend && npm run dev
+# Re-run alignment after new scrapes
+python -c "from backend.capabilities.aligner import run_alignment; run_alignment()"
 ```
 
 ---
@@ -76,10 +84,17 @@ drafts(id, project_id FK, section_type, content, model_version, generated_at)
 solicitation_capability_scores(solicitation_id FK, capability_id FK, score, rationale, scored_at) PK(sol_id, cap_id)
 ```
 
-## SBIR.gov Scraper Notes
+## API Summary
 
-- Listing URL: `https://www.sbir.gov/topics?status=1&page=N` (10/page, ~22k total)
-- Detail URL: `https://www.sbir.gov/topics/{id}`
-- Server-side rendered - no Playwright needed
-- Dedup: `ON CONFLICT(url)` upsert
-- Polite delay: 0.75s between requests
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /health | Health check |
+| GET | /solicitations | List all solicitations (paginated, agency filter) |
+| GET | /solicitations/{id} | Single solicitation |
+| POST | /solicitations/scrape | Trigger background scrape |
+| GET | /solicitations/scrape/status | Scrape job status |
+| GET | /solicitations/{id}/alignment | Alignment scores for a solicitation |
+| GET | /capabilities | List capabilities |
+| POST | /capabilities | Add new capability |
+| POST | /align/run | Trigger background alignment pass |
+| GET | /align/status | Alignment job status |

@@ -48,3 +48,33 @@
 - `GET /solicitations/1` returns single record with topic_number, agency, full description
 
 ---
+
+## 2026-04-01 - Day 3: Capability Alignment Scoring Engine
+
+### Completed
+- `backend/capabilities/seed_capabilities.py` - seeds 3 capabilities: Remote Sensing (22 kw), 3D Point Clouds (21 kw), Edge Computing (23 kw)
+- `backend/capabilities/prompts.py` - ALIGNMENT_SYSTEM + ALIGNMENT_USER templates; structured JSON response format
+- `backend/capabilities/aligner.py` - two-pass scoring: keyword_score() (sqrt-normalized, whole-word regex) gates Claude API calls at threshold 0.15; semantic_score() calls claude-sonnet-4-6 with max_tokens=256; run_alignment() processes all solicitations
+- `backend/routers/capabilities.py` - GET/POST /capabilities, POST /align/run (background), GET /align/status, GET /solicitations/{id}/alignment
+- `backend/main.py` - capabilities router registered
+
+### Performance
+- 20 solicitations x 3 capabilities = 60 scores
+- Only 5 Claude API calls triggered (keyword filter blocked 55/60)
+- Zero errors
+
+### Sample output
+- ID 18 (SWaP Radar Warning Receiver): Remote Sensing score 0.200, Claude rationale: "RWR payloads involve radar signal detection/processing, not remote sensing data acquisition or imagery analysis"
+- ID 3 (NAVWAR Post-Quantum Encryption): Edge Computing score 0.300 (keyword hit: embedded/advanced computing)
+
+### Notes
+- Keyword threshold 0.15 works well for this dataset - aggressive enough to block irrelevant topics, permissive enough for weak-signal matches
+- `run_alignment()` is idempotent via `upsert_score` - safe to re-run after scraping new solicitations
+
+### Verification
+- `python -m backend.capabilities.seed_capabilities` -> "3 new capabilities seeded"
+- `POST /align/run` -> background task, returns immediately
+- `GET /align/status` -> `{"running": false, "last_stats": {"api_calls_made": 5, ...}}`
+- `GET /solicitations/18/alignment` -> 3 scores with Claude rationale for Remote Sensing
+
+---

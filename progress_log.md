@@ -26,3 +26,25 @@
 - `sqlite3 proposalpilot.db ".tables"` lists all 5 tables
 
 ---
+
+## 2026-04-01 - Day 2: SBIR.gov Scraper + Solicitations API
+
+### Completed
+- `backend/scraper/parser.py` - HTML parsers for SBIR.gov listing (`/topics?status=1&page=N`) and detail (`/topics/{id}`) pages; extracts title, agency, topic_number, open/close dates, description, tags
+- `backend/scraper/sbir_scraper.py` - async httpx scraper with two-phase pipeline: listing pages (10/page) + optional detail page enrichment; polite 0.75s delay between requests
+- `backend/scraper/run_scrape.py` - CLI: `--max-pages N`, `--no-enrich`, `--max-detail N`; persists via crud.upsert_solicitation
+- `backend/routers/solicitations.py` - `GET /solicitations`, `GET /solicitations/{id}`, `POST /scrape` (background task), `GET /solicitations/scrape/status`
+- `backend/main.py` - solicitations router registered
+
+### Pivot Notes
+- **Playwright not needed.** SBIR.gov renders server-side. `httpx` + `BeautifulSoup` works cleanly. Playwright retained in requirements for future agency portal work.
+- SBIR.gov listing at `/topics?status=1&page=N` returns 10 topics/page. Pagination works with `?page=N`.
+- Detail pages (`/topics/{id}`) provide: topic_number, solicitation_number, full multi-paragraph description.
+- Duplicate topic_numbers across different URLs are legitimate (SBIR reuses codes across cycles). Dedup is by URL (UNIQUE constraint).
+
+### Verification
+- `python backend/scraper/run_scrape.py --max-pages 2 --max-detail 10` -> "Persisted 20 solicitations (0 errors)"
+- `GET /solicitations?limit=3` returns full JSON with descriptions (200+ word bodies)
+- `GET /solicitations/1` returns single record with topic_number, agency, full description
+
+---

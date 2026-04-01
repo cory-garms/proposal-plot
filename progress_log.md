@@ -78,3 +78,26 @@
 - `GET /solicitations/18/alignment` -> 3 scores with Claude rationale for Remote Sensing
 
 ---
+
+## 2026-04-01 - Day 4: RAG Draft Generation Pipeline
+
+### Completed
+- `backend/rag/context_builder.py` - assembles context from solicitation + alignment scores + capability descriptions; formats as structured text block for prompt injection; truncates descriptions at 6000 chars
+- `backend/rag/prompts.py` - DRAFT_SYSTEM, TECHNICAL_VOLUME_PROMPT (6 sections), COMMERCIALIZATION_PROMPT (6 sections); SECTION_PROMPTS dict for dispatch
+- `backend/rag/generator.py` - `generate_draft(project_id, section_type)`: loads project -> solicitation -> builds context -> renders prompt -> calls claude-sonnet-4-6 (max_tokens=4096) -> persists to drafts table
+- `backend/routers/projects.py` - POST /projects, GET /projects/{id}, POST /projects/{id}/generate, GET /projects/{id}/drafts
+- `backend/main.py` - projects router registered
+- 2 test projects created and drafts generated
+
+### Sample output quality
+- Project 1 (Cognitive Mapping, DTRA254-002, 0.850 3D Point Clouds): 17,302 char technical volume
+  - Correctly referenced SLAM, g2o, loop-closure, LiDAR, GPS-denied environments
+  - Technical approach grounded in actual problem domain
+- Project 2 (Shop Floor Human Detection, AF254-D0823, 0.850 3D Point Clouds): 16,824 char technical volume
+
+### Verification
+- `POST /projects` body `{"solicitation_id": 81, "title": "..."}` -> 201, returns project + alignment scores
+- `POST /projects/1/generate` body `{"section_type": "technical_volume"}` -> draft with 16-17k chars
+- `GET /projects/1/drafts` -> `[{"id": 1, "section_type": "technical_volume", "content": "..."}]`
+
+---

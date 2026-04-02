@@ -10,8 +10,8 @@ from backend.database import get_connection
 def upsert_solicitation(data: dict) -> int:
     """Insert or update a solicitation by URL. Returns the row id."""
     sql = """
-        INSERT INTO solicitations (agency, title, topic_number, description, deadline, open_date, close_date, release_date, vehicle_type, url, raw_html)
-        VALUES (:agency, :title, :topic_number, :description, :deadline, :open_date, :close_date, :release_date, :vehicle_type, :url, :raw_html)
+        INSERT INTO solicitations (agency, title, topic_number, description, deadline, open_date, close_date, release_date, vehicle_type, branch, tpoc_json, url, raw_html)
+        VALUES (:agency, :title, :topic_number, :description, :deadline, :open_date, :close_date, :release_date, :vehicle_type, :branch, :tpoc_json, :url, :raw_html)
         ON CONFLICT(url) DO UPDATE SET
             agency       = excluded.agency,
             title        = excluded.title,
@@ -22,6 +22,8 @@ def upsert_solicitation(data: dict) -> int:
             close_date   = excluded.close_date,
             release_date = excluded.release_date,
             vehicle_type = excluded.vehicle_type,
+            branch       = excluded.branch,
+            tpoc_json    = excluded.tpoc_json,
             raw_html     = excluded.raw_html,
             scraped_at   = datetime('now')
     """

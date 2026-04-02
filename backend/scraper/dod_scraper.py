@@ -89,11 +89,54 @@ def _fetch_search_page(page: int, size: int) -> dict:
     return _fetch_json(f"{SEARCH_URL}?{params}")
 
 
+# Canonical display names for DOD component codes
+_COMPONENT_NAMES = {
+    "ARMY":        "Army",
+    "NAVY":        "Navy",
+    "AIR FORCE":   "Air Force",
+    "USAF":        "Air Force",
+    "SPACE FORCE": "Space Force",
+    "USSF":        "Space Force",
+    "DARPA":       "DARPA",
+    "OSD":         "OSD",
+    "MDA":         "MDA",
+    "SOCOM":       "SOCOM",
+    "CBD":         "CBD",
+    "DTRA":        "DTRA",
+    "DMEA":        "DMEA",
+    "NGA":         "NGA",
+    "NSA":         "NSA",
+    "DIA":         "DIA",
+}
+
+
+def _parse_branch(item: dict) -> str | None:
+    raw = (item.get("component") or "").strip().upper()
+    return _COMPONENT_NAMES.get(raw, raw.title() if raw else None)
+
+
+def _parse_tpoc(item: dict) -> str | None:
+    """Return JSON array of public TPOC contacts, or None."""
+    managers = item.get("topicManagers") or []
+    tpocs = []
+    for m in managers:
+        if m.get("assignmentType") != "TPOC":
+            continue
+        entry: dict = {"name": m.get("name", "").strip()}
+        if m.get("emailDisplay") == "Y" and m.get("email"):
+            entry["email"] = m["email"].strip()
+        if m.get("phoneDisplay") == "Y" and m.get("phone"):
+            entry["phone"] = m["phone"].strip()
+        if entry.get("name"):
+            tpocs.append(entry)
+    return json.dumps(tpocs) if tpocs else None
+
+
 def _build_record(item: dict, detail: dict) -> dict:
     c_date = _ts_to_iso(item.get("topicEndDate"))
     title = item.get("topicTitle", "")
     topic_id = item.get("topicId", "")
-    description = detail["description"] or title  # fall back to title if detail failed
+    description = detail["description"] or title
 
     return {
         "agency": "DOD",
@@ -104,6 +147,9 @@ def _build_record(item: dict, detail: dict) -> dict:
         "open_date": _ts_to_iso(item.get("topicStartDate")),
         "close_date": c_date,
         "release_date": _ts_to_iso(item.get("topicPreReleaseStartDate")),
+        "vehicle_type": item.get("program", "SBIR"),  # "SBIR" or "STTR"
+        "branch": _parse_branch(item),
+        "tpoc_json": _parse_tpoc(item),
         "url": f"{BASE}/topics-app/?topicId={topic_id}",
         "raw_html": "",
     }

@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS solicitations (
     close_date  TEXT,
     release_date TEXT,
     vehicle_type TEXT NOT NULL DEFAULT 'SBIR',  -- SBIR, STTR, BAA, OTA, Grant
+    branch       TEXT,                          -- DOD sub-component: Army, Navy, Air Force, etc.
+    tpoc_json    TEXT,                          -- JSON array of {name, email} TPOC contacts
     watched      INTEGER NOT NULL DEFAULT 0,
     url         TEXT UNIQUE,
     raw_html    TEXT,

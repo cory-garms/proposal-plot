@@ -43,6 +43,8 @@ def build_db_record(record: dict) -> dict:
         "close_date": parse_date(record.get("close_date")),
         "release_date": parse_date(record.get("release_date")),
         "vehicle_type": record.get("vehicle_type") or "SBIR",
+        "branch": record.get("branch"),
+        "tpoc_json": record.get("tpoc_json"),
         "url": record.get("url") or "",
         "raw_html": record.get("raw_html"),
     }

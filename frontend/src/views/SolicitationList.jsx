@@ -9,6 +9,35 @@ const SCORE_BADGE = (score) => {
   return 'bg-gray-100 text-gray-500'
 }
 
+const renderAgency = (sol) => {
+  const label = sol.branch || sol.agency || '-'
+  const sub = sol.branch && sol.agency !== sol.branch ? sol.agency : null
+  return (
+    <div>
+      <span className="font-medium text-gray-700">{label}</span>
+      {sub && <div className="text-gray-400 text-xs">{sub}</div>}
+    </div>
+  )
+}
+
+const renderTpoc = (sol) => {
+  let tpocs = []
+  try { tpocs = JSON.parse(sol.tpoc_json || '[]') } catch {}
+  if (!tpocs.length) return <span className="text-gray-300 text-xs">-</span>
+  return (
+    <div className="flex flex-col gap-0.5">
+      {tpocs.slice(0, 2).map((t, i) => (
+        <div key={i} className="text-xs">
+          {t.email
+            ? <a href={`mailto:${t.email}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline">{t.name}</a>
+            : <span className="text-gray-600">{t.name}</span>
+          }
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const renderTiming = (sol) => {
   const closeDateStr = sol.close_date || sol.deadline
   if (!closeDateStr) return <span className="text-gray-300 text-xs">-</span>
@@ -222,10 +251,10 @@ export default function SolicitationList() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-3 py-3 w-8"></th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">ID</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-24">Agency</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Agency / Branch</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Topic #</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Title</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">TPOC</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-32">Deadline</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-44">Top Alignment</th>
                 </tr>
@@ -247,10 +276,10 @@ export default function SolicitationList() {
                         &#9733;
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 font-mono">{sol.id}</td>
-                    <td className="px-4 py-3 font-medium text-gray-700">{sol.agency}</td>
+                    <td className="px-4 py-3">{renderAgency(sol)}</td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{sol.topic_number || '-'}</td>
                     <td className="px-4 py-3 text-gray-900">{sol.title}</td>
+                    <td className="px-4 py-3">{renderTpoc(sol)}</td>
                     <td className="px-4 py-3">{renderTiming(sol)}</td>
                     <td className="px-4 py-3">
                       {sol.top_alignment_score !== null && sol.top_alignment_score !== undefined ? (

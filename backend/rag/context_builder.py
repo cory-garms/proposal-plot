@@ -1,10 +1,11 @@
 """
 Assembles the RAG context package passed to the draft generator.
 
-Pulls from three sources:
+Pulls from four sources:
   1. Solicitation record (title, agency, topic_number, description, deadline)
   2. All capability alignment scores for the solicitation
   3. Full capability descriptions + keywords for top-scoring capabilities
+  4. arXiv SOTA papers relevant to the solicitation + top capabilities
 """
 import json
 from backend.db.crud import (
@@ -12,6 +13,7 @@ from backend.db.crud import (
     get_scores_for_solicitation,
     get_all_capabilities,
 )
+from backend.rag.sota import fetch_papers, build_sota_query
 
 # Only include capability detail for scores above this threshold
 CAPABILITY_DETAIL_THRESHOLD = 0.3
@@ -42,17 +44,21 @@ def build_context(solicitation_id: int) -> dict:
         if s["score"] >= CAPABILITY_DETAIL_THRESHOLD and s["capability_id"] in all_caps
     ]
 
-    context_text = _format_context(sol, scores, top_caps)
+    sota_query = build_sota_query(sol, top_caps)
+    sota_papers = fetch_papers(sota_query, max_results=5) if sota_query else []
+
+    context_text = _format_context(sol, scores, top_caps, sota_papers)
 
     return {
         "solicitation": sol,
         "scores": scores,
         "top_capabilities": top_caps,
+        "sota_papers": sota_papers,
         "context_text": context_text,
     }
 
 
-def _format_context(sol: dict, scores: list[dict], top_caps: list[dict]) -> str:
+def _format_context(sol: dict, scores: list[dict], top_caps: list[dict], sota_papers: list[dict] = None) -> str:
     description = (sol.get("description") or "")[:MAX_DESCRIPTION_CHARS]
 
     lines = [
@@ -84,6 +90,20 @@ def _format_context(sol: dict, scores: list[dict], top_caps: list[dict]) -> str:
                 f"Capability: {cap['name']}",
                 f"Description: {cap['description']}",
                 f"Key terms: {', '.join(keywords[:12])}",
+                "",
+            ]
+
+    if sota_papers:
+        lines += ["=== RELEVANT PRIOR ART (arXiv) ==="]
+        lines.append("Use these papers to ground technical claims. Cite by author and year.")
+        lines.append("")
+        for i, p in enumerate(sota_papers, 1):
+            authors_str = ", ".join(p["authors"]) if p["authors"] else "Unknown"
+            lines += [
+                f"[{i}] {p['title']}",
+                f"    Authors: {authors_str} ({p['year']})",
+                f"    Abstract: {p['abstract']}",
+                f"    URL: {p['url']}",
                 "",
             ]
 

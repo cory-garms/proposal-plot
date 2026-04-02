@@ -9,7 +9,13 @@ credibility, and clear alignment to the solicitation's stated objectives.
 
 Your drafts follow standard government proposal structure, use active voice, and make the \
 technical innovation and feasibility case explicitly. Never use filler phrases like \
-"leveraging cutting-edge" or "state-of-the-art" without specific technical backing.\
+"leveraging cutting-edge" or "state-of-the-art" without specific technical backing.
+
+When a RELEVANT PRIOR ART section is provided in the context, you MUST:
+- Cite at least 2 papers by author name and year (e.g., "Smith et al. (2023)") when making \
+technical claims in the Background and Innovation sections.
+- Use the prior art to establish the gap that this proposal addresses.
+- Do not fabricate citations. Only reference papers explicitly listed in the context.\
 """
 
 TECHNICAL_VOLUME_PROMPT = """\
@@ -82,3 +88,59 @@ SECTION_PROMPTS = {
     "technical_volume": TECHNICAL_VOLUME_PROMPT,
     "commercialization_plan": COMMERCIALIZATION_PROMPT,
 }
+
+# --- Draft settings modifiers ---
+
+TONE_MODIFIERS = {
+    "technical": (
+        "Write for a technical reviewer with deep domain expertise. "
+        "Use precise terminology, cite specific methods or algorithms by name, "
+        "and prioritize accuracy and specificity over accessibility."
+    ),
+    "executive": (
+        "Write for a non-technical program manager or executive. "
+        "Lead with impact and strategic value. Minimize jargon. "
+        "Make the business case and mission relevance explicit in every section."
+    ),
+    "persuasive": (
+        "Write to win. Emphasize competitive differentiation and urgency. "
+        "Every section should make a strong case for why this team, this approach, "
+        "and this timeline are the right choice. Be assertive, not hedging."
+    ),
+}
+
+FOCUS_MODIFIERS = {
+    "balanced": "",
+    "innovation": (
+        "Place extra emphasis on Sections 2 (Innovation) and 3 (Technical Approach). "
+        "Expand on what is novel, why prior art falls short, and what makes this "
+        "approach technically differentiated. Other sections may be proportionally shorter."
+    ),
+    "feasibility": (
+        "Place extra emphasis on Sections 4 (Feasibility) and 5 (Work Plan). "
+        "Be specific about risk identification, mitigation strategies, milestones, "
+        "and measurable success criteria. Demonstrate that Phase I is achievable."
+    ),
+    "commercialization": (
+        "Place extra emphasis on the commercial pathway and market opportunity. "
+        "Strengthen the connection between the technical work and downstream revenue "
+        "or transition to a program of record. Be specific about customers and market size."
+    ),
+}
+
+
+def build_settings_block(tone: str, focus_area: str) -> str:
+    """
+    Return a prompt modifier string for the given tone and focus_area.
+    Returns empty string if both are at their defaults.
+    """
+    parts = []
+    tone_text = TONE_MODIFIERS.get(tone, "")
+    focus_text = FOCUS_MODIFIERS.get(focus_area, "")
+    if tone_text:
+        parts.append(f"Tone: {tone_text}")
+    if focus_text:
+        parts.append(f"Focus: {focus_text}")
+    if not parts:
+        return ""
+    return "\n\n---\n\nDraft Settings:\n" + "\n".join(parts)

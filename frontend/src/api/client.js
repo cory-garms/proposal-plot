@@ -11,8 +11,11 @@ export const getSolicitations = (params = {}) =>
 export const getSolicitation = (id) =>
   api.get(`/solicitations/${id}`).then(r => r.data)
 
-export const getAlignment = (id) =>
-  api.get(`/solicitations/${id}/alignment`).then(r => r.data)
+export const getAlignment = (id, profileId) =>
+  api.get(`/solicitations/${id}/alignment`, { params: { profile_id: profileId } }).then(r => r.data)
+
+export const triggerAlignment = (id) =>
+  api.post(`/solicitations/${id}/align`).then(r => r.data)
 
 export const triggerScrape = (params = {}) =>
   api.post('/solicitations/scrape', params).then(r => r.data)
@@ -20,8 +23,17 @@ export const triggerScrape = (params = {}) =>
 export const getScrapeStatus = () =>
   api.get('/solicitations/scrape/status').then(r => r.data)
 
-export const getCapabilities = () =>
-  api.get('/capabilities').then(r => r.data)
+export const getDashboard = () =>
+  api.get('/dashboard').then(r => r.data)
+
+export const getProfiles = () =>
+  api.get('/profiles').then(r => r.data)
+
+export const createProfile = (body) =>
+  api.post('/profiles', body).then(r => r.data)
+
+export const getCapabilities = (profileId) =>
+  api.get('/capabilities', { params: { profile_id: profileId } }).then(r => r.data)
 
 export const createProject = (body) =>
   api.post('/projects', body).then(r => r.data)
@@ -29,10 +41,13 @@ export const createProject = (body) =>
 export const getProject = (id) =>
   api.get(`/projects/${id}`).then(r => r.data)
 
-export const generateDraft = (projectId, sectionType) =>
-  api.post(`/projects/${projectId}/generate`, { section_type: sectionType }).then(r => r.data)
+export const generateDraft = (projectId, sectionType, tone = 'technical', focusArea = 'balanced') =>
+  api.post(`/projects/${projectId}/generate`, { section_type: sectionType, tone, focus_area: focusArea }).then(r => r.data)
 
 export const getDrafts = (projectId) =>
   api.get(`/projects/${projectId}/drafts`).then(r => r.data)
+
+export const updateDraft = (projectId, draftId, content) =>
+  api.patch(`/projects/${projectId}/drafts/${draftId}`, { content }).then(r => r.data)
 
 export default api

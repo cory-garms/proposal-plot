@@ -18,7 +18,7 @@ from backend.db.crud import (
     get_drafts_for_project,
 )
 from backend.rag.context_builder import build_context
-from backend.rag.prompts import SECTION_PROMPTS, DRAFT_SYSTEM
+from backend.rag.prompts import SECTION_PROMPTS, DRAFT_SYSTEM, build_settings_block
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
@@ -26,7 +26,7 @@ MAX_TOKENS = 4096
 VALID_SECTION_TYPES = set(SECTION_PROMPTS.keys())
 
 
-def generate_draft(project_id: int, section_type: str) -> dict:
+def generate_draft(project_id: int, section_type: str, tone: str = "technical", focus_area: str = "balanced") -> dict:
     """
     Generate a draft section for a project and persist it.
     Returns the inserted draft dict.
@@ -57,7 +57,7 @@ def generate_draft(project_id: int, section_type: str) -> dict:
     user_prompt = prompt_template.format(
         context=ctx["context_text"],
         top_capability=top_cap,
-    )
+    ) + build_settings_block(tone, focus_area)
 
     # Call Claude
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)

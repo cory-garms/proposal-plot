@@ -1,10 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, getDrafts, generateDraft } from '../api/client'
+import { getProject, getDrafts, generateDraft, updateDraft } from '../api/client'
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 const SECTION_TYPES = [
   { value: 'technical_volume', label: 'Technical Volume' },
   { value: 'commercialization_plan', label: 'Commercialization Plan' },
+]
+
+const TONES = [
+  { value: 'technical', label: 'Technical' },
+  { value: 'executive', label: 'Executive' },
+  { value: 'persuasive', label: 'Persuasive' },
+]
+
+const FOCUS_AREAS = [
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'innovation', label: 'Innovation' },
+  { value: 'feasibility', label: 'Feasibility' },
+  { value: 'commercialization', label: 'Commercialization' },
 ]
 
 const scoreColor = (score) => {
@@ -20,10 +35,16 @@ export default function DraftEditor() {
   const [drafts, setDrafts] = useState([])
   const [selectedDraftId, setSelectedDraftId] = useState(null)
   const [sectionType, setSectionType] = useState('technical_volume')
+  const [tone, setTone] = useState('technical')
+  const [focusArea, setFocusArea] = useState('balanced')
   const [generating, setGenerating] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     Promise.all([getProject(id), getDrafts(id)])
@@ -40,7 +61,7 @@ export default function DraftEditor() {
     setGenerating(true)
     setError('')
     try {
-      const draft = await generateDraft(id, sectionType)
+      const draft = await generateDraft(id, sectionType, tone, focusArea)
       setDrafts(prev => [draft, ...prev])
       setSelectedDraftId(draft.id)
     } catch (e) {
@@ -54,10 +75,40 @@ export default function DraftEditor() {
   const handleCopy = () => {
     const draft = drafts.find(d => d.id === selectedDraftId)
     if (!draft) return
-    navigator.clipboard.writeText(draft.content).then(() => {
+    navigator.clipboard.writeText(editing ? editContent : draft.content).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  const handleEdit = () => {
+    const draft = drafts.find(d => d.id === selectedDraftId)
+    if (!draft) return
+    setEditContent(draft.content)
+    setEditing(true)
+    setSaved(false)
+  }
+
+  const handleCancelEdit = () => {
+    setEditing(false)
+    setEditContent('')
+  }
+
+  const handleSave = async () => {
+    if (!editContent.trim()) return
+    setSaving(true)
+    setError('')
+    try {
+      const updated = await updateDraft(id, selectedDraftId, editContent)
+      setDrafts(prev => prev.map(d => d.id === updated.id ? updated : d))
+      setEditing(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setError('Save failed: ' + (e.response?.data?.detail || e.message || 'unknown'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const selectedDraft = drafts.find(d => d.id === selectedDraftId)
@@ -128,6 +179,26 @@ export default function DraftEditor() {
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
+            <label className="block text-xs text-gray-500 mb-1">Tone</label>
+            <select
+              value={tone}
+              onChange={e => setTone(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {TONES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <label className="block text-xs text-gray-500 mb-1">Focus area</label>
+            <select
+              value={focusArea}
+              onChange={e => setFocusArea(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {FOCUS_AREAS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
             <button
               onClick={handleGenerate}
               disabled={generating}
@@ -152,7 +223,7 @@ export default function DraftEditor() {
                 {drafts.map(d => (
                   <button
                     key={d.id}
-                    onClick={() => setSelectedDraftId(d.id)}
+                    onClick={() => { setSelectedDraftId(d.id); setEditing(false); setSaved(false) }}
                     className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
                       d.id === selectedDraftId
                         ? 'bg-blue-50 text-blue-700 font-medium'
@@ -178,17 +249,70 @@ export default function DraftEditor() {
                     {SECTION_TYPES.find(t => t.value === selectedDraft.section_type)?.label}
                   </span>
                   <span className="text-xs text-gray-400 ml-2">{selectedDraft.model_version}</span>
+                  {saved && <span className="text-xs text-green-600 ml-2">Saved</span>}
                 </div>
-                <button
-                  onClick={handleCopy}
-                  className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {editing ? (
+                    <>
+                      <button
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                        className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="text-xs px-3 py-1 bg-blue-700 text-white rounded hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                      >
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <a
+                        href={`${API_BASE}/projects/${id}/drafts/${selectedDraft.id}/export/pdf`}
+                        download
+                        className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                      >
+                        PDF
+                      </a>
+                      <a
+                        href={`${API_BASE}/projects/${id}/drafts/${selectedDraft.id}/export/docx`}
+                        download
+                        className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                      >
+                        DOCX
+                      </a>
+                      <button
+                        onClick={handleEdit}
+                        className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={handleCopy}
+                        className="text-xs px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                      >
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="p-5 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed font-mono max-h-[70vh] overflow-y-auto">
-                {selectedDraft.content}
-              </div>
+              {editing ? (
+                <textarea
+                  value={editContent}
+                  onChange={e => setEditContent(e.target.value)}
+                  className="w-full p-5 text-sm text-gray-800 leading-relaxed font-mono focus:outline-none resize-none"
+                  style={{ minHeight: '70vh' }}
+                />
+              ) : (
+                <div className="p-5 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed font-mono max-h-[70vh] overflow-y-auto">
+                  {selectedDraft.content}
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center h-64">

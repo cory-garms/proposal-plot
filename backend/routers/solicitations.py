@@ -20,9 +20,14 @@ class GrantsScrapeRequest(BaseModel):
     max_results: int = 200
 
 
+class SamScrapeRequest(BaseModel):
+    max_results: int = 200
+
+
 # Shared scrape state so the UI can poll if needed
 _scrape_status: dict = {"running": False, "last_count": 0, "last_error": None}
 _grants_status: dict = {"running": False, "last_stats": None, "last_error": None}
+_sam_status: dict = {"running": False, "last_stats": None, "last_error": None}
 
 
 @router.get("")
@@ -113,6 +118,32 @@ def trigger_grants_scrape(req: GrantsScrapeRequest, background_tasks: Background
 @router.get("/scrape/grants/status")
 def grants_scrape_status():
     return _grants_status
+
+
+@router.post("/scrape/sam")
+def trigger_sam_scrape(req: SamScrapeRequest, background_tasks: BackgroundTasks):
+    if _sam_status["running"]:
+        raise HTTPException(status_code=409, detail="SAM scrape already in progress")
+    background_tasks.add_task(_run_sam_scrape, req.max_results)
+    return {"message": "SAM.gov scrape started", "max_results": req.max_results}
+
+
+@router.get("/scrape/sam/status")
+def sam_scrape_status():
+    return _sam_status
+
+
+async def _run_sam_scrape(max_results: int) -> None:
+    from backend.scraper.sam_scraper import run_sam_scrape
+    _sam_status["running"] = True
+    _sam_status["last_error"] = None
+    try:
+        stats = run_sam_scrape(max_results=max_results)
+        _sam_status["last_stats"] = stats
+    except Exception as e:
+        _sam_status["last_error"] = str(e)
+    finally:
+        _sam_status["running"] = False
 
 
 async def _run_grants_scrape(max_results: int) -> None:

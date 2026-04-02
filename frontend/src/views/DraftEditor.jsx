@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, getDrafts, generateDraft, updateDraft } from '../api/client'
+import { getProject, getDrafts, generateDraft, updateDraft, getDraftDiff } from '../api/client'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -21,6 +21,15 @@ const FOCUS_AREAS = [
   { value: 'feasibility', label: 'Feasibility' },
   { value: 'commercialization', label: 'Commercialization' },
 ]
+
+const SECTION_BADGE = {
+  technical_volume: 'bg-blue-100 text-blue-700',
+  commercialization_plan: 'bg-purple-100 text-purple-700',
+}
+const SECTION_SHORT = {
+  technical_volume: 'Tech',
+  commercialization_plan: 'Comm',
+}
 
 const scoreColor = (score) => {
   if (score >= 0.7) return 'text-green-600'
@@ -45,6 +54,9 @@ export default function DraftEditor() {
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [showDiff, setShowDiff] = useState(false)
+  const [diffLines, setDiffLines] = useState([])
+  const [diffLoading, setDiffLoading] = useState(false)
 
   useEffect(() => {
     Promise.all([getProject(id), getDrafts(id)])
@@ -108,6 +120,29 @@ export default function DraftEditor() {
       setError('Save failed: ' + (e.response?.data?.detail || e.message || 'unknown'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const selectedDraftIdx = drafts.findIndex(d => d.id === selectedDraftId)
+  const prevDraft = selectedDraftIdx >= 0 && selectedDraftIdx < drafts.length - 1
+    ? drafts[selectedDraftIdx + 1]
+    : null
+
+  const handleToggleDiff = async () => {
+    if (showDiff) {
+      setShowDiff(false)
+      return
+    }
+    if (!prevDraft) return
+    setDiffLoading(true)
+    try {
+      const result = await getDraftDiff(id, selectedDraftId, prevDraft.id)
+      setDiffLines(result.diff)
+      setShowDiff(true)
+    } catch (e) {
+      setError('Diff failed: ' + (e.response?.data?.detail || e.message || 'unknown'))
+    } finally {
+      setDiffLoading(false)
     }
   }
 
@@ -223,14 +258,19 @@ export default function DraftEditor() {
                 {drafts.map(d => (
                   <button
                     key={d.id}
-                    onClick={() => { setSelectedDraftId(d.id); setEditing(false); setSaved(false) }}
+                    onClick={() => { setSelectedDraftId(d.id); setEditing(false); setSaved(false); setShowDiff(false); setDiffLines([]) }}
                     className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
                       d.id === selectedDraftId
                         ? 'bg-blue-50 text-blue-700 font-medium'
                         : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    <div className="font-medium">{SECTION_TYPES.find(t => t.value === d.section_type)?.label || d.section_type}</div>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SECTION_BADGE[d.section_type] || 'bg-gray-100 text-gray-600'}`}>
+                        {SECTION_SHORT[d.section_type] || d.section_type}
+                      </span>
+                      <span className="text-gray-400 text-[10px]">{d.content?.length?.toLocaleString()} ch</span>
+                    </div>
                     <div className="text-gray-400">{d.generated_at?.slice(0, 16)}</div>
                   </button>
                 ))}
@@ -271,6 +311,19 @@ export default function DraftEditor() {
                     </>
                   ) : (
                     <>
+                      {prevDraft && (
+                        <button
+                          onClick={handleToggleDiff}
+                          disabled={diffLoading}
+                          className={`text-xs px-3 py-1 border rounded transition-colors disabled:opacity-50 ${
+                            showDiff
+                              ? 'border-blue-400 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {diffLoading ? 'Diffing...' : showDiff ? 'Content' : 'Diff'}
+                        </button>
+                      )}
                       <a
                         href={`${API_BASE}/projects/${id}/drafts/${selectedDraft.id}/export/pdf`}
                         download
@@ -308,6 +361,24 @@ export default function DraftEditor() {
                   className="w-full p-5 text-sm text-gray-800 leading-relaxed font-mono focus:outline-none resize-none"
                   style={{ minHeight: '70vh' }}
                 />
+              ) : showDiff ? (
+                <div className="p-5 text-xs font-mono max-h-[70vh] overflow-y-auto space-y-0">
+                  {diffLines.length === 0
+                    ? <p className="text-gray-400">No differences found.</p>
+                    : diffLines.map((line, i) => {
+                        let cls = 'text-gray-600 bg-white'
+                        if (line.startsWith('+++') || line.startsWith('---')) cls = 'text-gray-500 bg-gray-50'
+                        else if (line.startsWith('+')) cls = 'text-green-700 bg-green-50'
+                        else if (line.startsWith('-')) cls = 'text-red-700 bg-red-50'
+                        else if (line.startsWith('@@')) cls = 'text-blue-600 bg-blue-50'
+                        return (
+                          <div key={i} className={`whitespace-pre-wrap px-2 py-0.5 ${cls}`}>
+                            {line || '\u00A0'}
+                          </div>
+                        )
+                      })
+                  }
+                </div>
               ) : (
                 <div className="p-5 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed font-mono max-h-[70vh] overflow-y-auto">
                   {selectedDraft.content}

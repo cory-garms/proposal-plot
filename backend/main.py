@@ -6,6 +6,8 @@ from backend.routers.solicitations import router as solicitations_router
 from backend.routers.capabilities import router as capabilities_router
 from backend.routers.projects import router as projects_router
 from backend.routers.dashboard import router as dashboard_router
+from backend.routers.keywords import router as keywords_router
+from backend.routers.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -28,6 +30,8 @@ app.include_router(solicitations_router)
 app.include_router(capabilities_router)
 app.include_router(projects_router)
 app.include_router(dashboard_router)
+app.include_router(keywords_router)
+app.include_router(auth_router)
 
 
 @app.get("/health")

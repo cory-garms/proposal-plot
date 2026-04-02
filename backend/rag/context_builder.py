@@ -13,7 +13,7 @@ from backend.db.crud import (
     get_scores_for_solicitation,
     get_all_capabilities,
 )
-from backend.rag.sota import fetch_papers, build_sota_query
+from backend.rag.sota import fetch_papers_cached, build_sota_query
 
 # Only include capability detail for scores above this threshold
 CAPABILITY_DETAIL_THRESHOLD = 0.3
@@ -45,7 +45,7 @@ def build_context(solicitation_id: int) -> dict:
     ]
 
     sota_query = build_sota_query(sol, top_caps)
-    sota_papers = fetch_papers(sota_query, max_results=5) if sota_query else []
+    sota_papers = fetch_papers_cached(sol["id"], sota_query, max_results=5) if sota_query else []
 
     context_text = _format_context(sol, scores, top_caps, sota_papers)
 

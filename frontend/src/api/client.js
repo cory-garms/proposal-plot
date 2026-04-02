@@ -5,6 +5,25 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Attach JWT if present
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers['Authorization'] = `Bearer ${token}`
+  return config
+})
+
+// Redirect to /login on 401
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401 && window.location.pathname !== '/login') {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(err)
+  }
+)
+
 export const getSolicitations = (params = {}) =>
   api.get('/solicitations', { params }).then(r => r.data)
 
@@ -52,5 +71,20 @@ export const getDrafts = (projectId) =>
 
 export const updateDraft = (projectId, draftId, content) =>
   api.patch(`/projects/${projectId}/drafts/${draftId}`, { content }).then(r => r.data)
+
+export const getDraftDiff = (projectId, draftId, againstId) =>
+  api.get(`/projects/${projectId}/drafts/${draftId}/diff`, { params: { against: againstId } }).then(r => r.data)
+
+export const getKeywords = (activeOnly = false) =>
+  api.get('/keywords', { params: { active_only: activeOnly } }).then(r => r.data)
+
+export const createKeyword = (keyword) =>
+  api.post('/keywords', { keyword }).then(r => r.data)
+
+export const toggleKeyword = (id, active) =>
+  api.patch(`/keywords/${id}`, null, { params: { active } }).then(r => r.data)
+
+export const deleteKeyword = (id) =>
+  api.delete(`/keywords/${id}`).then(r => r.data)
 
 export default api

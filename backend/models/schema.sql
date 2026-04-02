@@ -17,9 +17,17 @@ CREATE TABLE IF NOT EXISTS solicitations (
     scraped_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    email           TEXT NOT NULL UNIQUE,
+    hashed_password TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS profiles (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE
+    name        TEXT NOT NULL UNIQUE,
+    user_id     INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS capabilities (
@@ -74,9 +82,18 @@ CREATE TABLE IF NOT EXISTS search_keywords (
     added_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS sota_cache (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    solicitation_id INTEGER NOT NULL REFERENCES solicitations(id),
+    query           TEXT NOT NULL,
+    papers_json     TEXT NOT NULL,
+    fetched_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_solicitations_agency   ON solicitations(agency);
 CREATE INDEX IF NOT EXISTS idx_solicitations_deadline ON solicitations(deadline);
 CREATE INDEX IF NOT EXISTS idx_projects_solicitation  ON projects(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_drafts_project         ON drafts(project_id);
 CREATE INDEX IF NOT EXISTS idx_scores_solicitation    ON solicitation_capability_scores(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_search_keywords_active ON search_keywords(active);
+CREATE INDEX IF NOT EXISTS idx_sota_cache_solicitation ON sota_cache(solicitation_id);

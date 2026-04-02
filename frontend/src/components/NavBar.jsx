@@ -50,9 +50,16 @@ export default function NavBar() {
         </Link>
         {link('/', 'Dashboard')}
         {link('/solicitations', 'Solicitations')}
+        {link('/keywords', 'Keywords')}
       </div>
       
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-4 text-sm">
+        <button
+          onClick={() => { localStorage.removeItem('token'); window.location.href = '/login' }}
+          className="text-blue-300 hover:text-white text-xs transition-colors"
+        >
+          Sign out
+        </button>
         <span className="text-blue-200">Profile:</span>
         <select 
           value={selectedProfileId}

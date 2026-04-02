@@ -8,6 +8,9 @@ import json
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from backend.database import get_connection
+
+CACHE_TTL_DAYS = 7
 
 ARXIV_API = "http://export.arxiv.org/api/query"
 NS = {"atom": "http://www.w3.org/2005/Atom"}
@@ -67,6 +70,39 @@ def fetch_papers(query: str, max_results: int = 5) -> list[dict]:
     except Exception as e:
         print(f"[sota] arXiv parse failed: {e}")
         return []
+
+
+def fetch_papers_cached(solicitation_id: int, query: str, max_results: int = 5) -> list[dict]:
+    """
+    Cached wrapper around fetch_papers.
+    Returns cached result if < CACHE_TTL_DAYS old; otherwise fetches from arXiv and stores.
+    """
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT papers_json FROM sota_cache "
+                "WHERE solicitation_id = ? AND fetched_at > datetime('now', ?) "
+                "ORDER BY fetched_at DESC LIMIT 1",
+                (solicitation_id, f"-{CACHE_TTL_DAYS} days"),
+            ).fetchone()
+        if row:
+            return json.loads(row["papers_json"])
+    except Exception as e:
+        print(f"[sota] cache read failed: {e}")
+
+    papers = fetch_papers(query, max_results)
+
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO sota_cache (solicitation_id, query, papers_json) VALUES (?, ?, ?)",
+                (solicitation_id, query, json.dumps(papers)),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"[sota] cache write failed: {e}")
+
+    return papers
 
 
 def build_sota_query(sol: dict, top_caps: list[dict]) -> str:

@@ -141,3 +141,45 @@
 - Execute the Grants.gov and SAM.gov scraper implementations based on user feedback to the open questions.
 
 ---
+
+## 2026-04-02 - Sprint 5 (Claude)
+
+### Day 1: SOTA Caching + Draft Revision History UI
+- Added `sota_cache(solicitation_id, query, papers_json, fetched_at)` table to schema + live DB
+- `fetch_papers_cached()` in `sota.py`: 7-day TTL check before hitting arXiv; non-fatal on cache errors
+- `context_builder.py` updated to use cached fetch — ~2s saved on repeated draft generation
+- `GET /projects/{id}/drafts/{draft_id}/diff?against={other_id}`: unified diff via Python `difflib`
+- `DraftEditor.jsx`: section type badge (Tech/Comm) + char count on each draft history entry
+- Diff toggle button in content header — color-coded line view (green additions, red removals)
+
+### Day 2: Keyword Management UI
+- `backend/routers/keywords.py` (new): full CRUD router (`GET/POST/PATCH/DELETE /keywords`)
+- `frontend/src/views/Keywords.jsx` (new): table with source badges, active toggle, delete, search + filter bar, inline add form; optimistic toggle
+- `/keywords` route in App.jsx + NavBar link
+
+### Day 3: SAM.gov Scraper
+- `backend/scraper/sam_scraper.py` (new): queries `ptype=k` + `ptype=p` against 20 domain clusters
+- Same keyword-cluster strategy as Grants.gov scraper
+- TPOC extraction from `pointOfContact` array; agency normalization map
+- Rate-limited: 6.5s/req without key, 0.7s/req with `SAM_API_KEY` env var
+- `POST /solicitations/scrape/sam` + `GET /solicitations/scrape/sam/status` in solicitations router
+
+### Day 4: Solicitation Detail Page Improvements
+- `SolicitationDetail.jsx` rewritten: agency/branch chip (`DOD / Army`), vehicle type badge (color-coded), TPOC card, watch star (optimistic toggle), `navigate(-1)` back button
+
+### Day 5: User Authentication (JWT)
+- `users(id, email, hashed_password, created_at)` table; `profiles.user_id` nullable FK (existing data unaffected)
+- `python-jose[cryptography]`, `passlib[bcrypt]`, `python-multipart` added to requirements
+- `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRE_HOURS` in config.py
+- `backend/routers/auth.py` (new): `POST /auth/register`, `POST /auth/login` (OAuth2 form), `GET /auth/me`
+- Protected: `POST /projects`, `POST /projects/{id}/generate`, `PATCH /projects/{id}/drafts/{id}` require Bearer token; read routes remain public
+- `frontend/src/views/Login.jsx` (new): combined login/register page
+- `client.js`: request interceptor attaches `Authorization: Bearer`; response interceptor redirects to `/login` on 401
+- NavBar: "Sign out" button; login page hides NavBar via `useLocation`
+
+### DB State at Sprint End
+- 224 solicitations (173 SBIR, 1 STTR, 50 Grant), 100% scored
+- 607 active keywords, 0 users (first login creates account at `/login`)
+- `sota_cache` table present and empty (will populate on first draft generation)
+
+---

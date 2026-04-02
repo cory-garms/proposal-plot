@@ -26,8 +26,8 @@ export const triggerScrape = (params = {}) =>
 export const getScrapeStatus = () =>
   api.get('/solicitations/scrape/status').then(r => r.data)
 
-export const getDashboard = () =>
-  api.get('/dashboard').then(r => r.data)
+export const getDashboard = (profileId = '1') =>
+  api.get('/dashboard', { params: { profile_id: profileId } }).then(r => r.data)
 
 export const getProfiles = () =>
   api.get('/profiles').then(r => r.data)

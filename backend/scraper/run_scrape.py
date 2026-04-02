@@ -42,6 +42,7 @@ def build_db_record(record: dict) -> dict:
         "open_date": parse_date(record.get("open_date")),
         "close_date": parse_date(record.get("close_date")),
         "release_date": parse_date(record.get("release_date")),
+        "vehicle_type": record.get("vehicle_type") or "SBIR",
         "url": record.get("url") or "",
         "raw_html": record.get("raw_html"),
     }

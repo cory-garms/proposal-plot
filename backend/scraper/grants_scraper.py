@@ -18,6 +18,42 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+# Maps Grants.gov full agency names to the short codes used in the rest of the app.
+# Keys are lowercase. Unmatched agencies fall through as-is.
+_AGENCY_CODES = {
+    "u.s. national science foundation": "NSF",
+    "national science foundation": "NSF",
+    "national institutes of health": "NIH",
+    "nasa headquarters": "NASA",
+    "national aeronautics and space administration": "NASA",
+    "office of science": "DOE",
+    "department of energy": "DOE",
+    "forest service": "USDA",
+    "natural resources conservation service": "USDA",
+    "geological survey": "DOI",
+    "bureau of reclamation": "DOI",
+    "health resources and services Administration": "HHS",
+    "health resources and services administration": "HHS",
+    "darpa": "DARPA",
+    "darpa - biological technologies office": "DARPA",
+    "naval research laboratory": "DOD",
+    "nswc dahlgren": "DOD",
+    "nswc crane - n00164": "DOD",
+    "munitions directorate": "DOD",
+    "acc apg - natick": "DOD",
+    "air force -- research lab": "DOD",
+    "dept of the army -- materiel command": "DOD",
+    "engineer research and development center": "DOD",
+    "department of defense": "DOD",
+    "doc noaa - era production": "NOAA",
+    "noaa": "NOAA",
+}
+
+
+def _normalize_agency(raw: str) -> str:
+    return _AGENCY_CODES.get(raw.strip().lower(), raw.strip())
+
+
 SEARCH_URL = "https://apply07.grants.gov/grantsws/rest/opportunities/search/"
 DETAIL_URL = "https://apply07.grants.gov/grantsws/rest/opportunity/details"
 GRANTS_BASE = "https://www.grants.gov/search-results-detail"
@@ -188,7 +224,7 @@ def run_grants_scrape(max_results: int = 200, delay: float = 0.5) -> dict:
         open_ = detail["open_date"] or _parse_date(opp.get("openDate"))
 
         record = {
-            "agency": opp.get("agency", opp.get("agencyCode", "Unknown")),
+            "agency": _normalize_agency(opp.get("agency") or opp.get("agencyCode") or "Unknown"),
             "title": opp.get("title", ""),
             "topic_number": opp.get("number", ""),
             "description": detail["description"] or opp.get("title", ""),

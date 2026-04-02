@@ -50,7 +50,7 @@ export default function SolicitationList() {
   const [hasMore, setHasMore] = useState(true)
   const [agencyFilter, setAgencyFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [sortMode, setSortMode] = useState('')
+  const [sortMode, setSortMode] = useState('alignmentDesc')
   const [savedTab, setSavedTab] = useState(false)
   const PAGE_SIZE = 25
 
@@ -169,12 +169,14 @@ export default function SolicitationList() {
           >
             <option value="">All Agencies</option>
             <option value="DOD">DOD</option>
-            <option value="MDA">MDA</option>
             <option value="DARPA">DARPA</option>
             <option value="NASA">NASA</option>
-            <option value="USDA">USDA</option>
             <option value="NSF">NSF</option>
+            <option value="NIH">NIH</option>
+            <option value="USDA">USDA</option>
             <option value="DOE">DOE</option>
+            <option value="NOAA">NOAA</option>
+            <option value="DOI">DOI</option>
           </select>
           {scrapeMsg && <span className="text-sm text-gray-600">{scrapeMsg}</span>}
           <button

@@ -1,70 +1,82 @@
 # HANDOFF
 
-**Last updated:** 2026-04-02 (Added Spectral Sciences capabilities + Planned Grants.gov/SAM.gov scrapers — Gemini)
+**Last updated:** 2026-04-02 (Sprint 4 complete — Claude)
 
 ---
 
-## What Was Built This Session (Gemini)
+## What Was Built This Session (Claude)
 
-- **Spectral Sciences Profile**: Updated `backend/capabilities/seed_capabilities.py` to seed two profiles: "Cory Garms" and "Spectral Sciences".
-- The "Spectral Sciences" profile includes 5 custom capabilities derived from analyzing `ssi_sbir_history.csv`: Hypersonics and Aerothermodynamics, Physics-Informed AI/ML, Synthetic Data and Scene Generation (M&S), Counter-UAS and Advanced Threat Tracking, and Atmospheric Modeling and Space Weather.
-- These profiles are immediately available in the frontend `NavBar.jsx` drop-down for dynamic context switching during draft generation.
+### Sprint 4 features (commits `85cb053`, `e9aae23`, `b348b09`)
 
-## Current Plan / Unfinished Business
+**Keyword Filter Infrastructure**
+- `search_keywords` table: 607 active terms seeded from all capability profiles + `ssi_sbir_history.csv`
+- Source tracked (`capability` / `csv` / `manual`); `active` flag lets you prune without deleting
+- Normalization pipeline strips internal program codes (SAMM, FLITES, etc.), sentence fragments, tokens <4 chars
+- Full CRUD API: `GET/POST/PATCH/DELETE /keywords`
 
-- We drafted an `implementation_plan.md` to build out non-SBIR/STTR scrapers (Grants.gov and SAM.gov) to capture BAAs, OTAs, and conventional grants.
-- **Pending Questions for Claude/User**:
-  - Should we obtain a SAM.gov API key or rely on parsing their daily bulk CSV extracts?
-  - Should we update the `solicitations` schema to include a `vehicle_type` column (to distinguish SBIR vs BAA vs OTA)?
-  - Should Grants.gov scraping be filtered by a specific list of technical keywords to avoid ingesting irrelevant grants?
+**Grants.gov Scraper**
+- 20 domain-tuned cluster search queries + uncovered active keywords as fallback
+- Fetches `synopsisDesc` via `oppId` form-encoded detail endpoint
+- Agency normalized on ingest: "U.S. National Science Foundation" → NSF, etc.
+- 50 records in DB, all scored; top hits: NASA SAR (0.90), Snow Water 3D (0.85), NRL BAA (0.70)
+- Routes: `POST /solicitations/scrape/grants`, `GET /solicitations/scrape/grants/status`
+
+**`vehicle_type` column** — SBIR / STTR / BAA / OTA / Grant on every solicitation
+
+**Watch List**
+- `watched` boolean on solicitations + `PATCH /solicitations/{id}/watch`
+- Star column in the list table (optimistic toggle)
+- "Saved" tab — shows only watched items, respects all filters, expires included
+
+**Dashboard improvements**
+- Profile-aware: reads `profile_id` from query param, sourced from `localStorage`
+- Each section sorted by `top_alignment_score` descending
+- Cards show top 1-3 capability match badges (green ≥0.70 / yellow ≥0.40 / gray)
+- Card border color signals overall strength at a glance
+
+**Agency + Branch differentiation**
+- `branch` column: DOD component from API (`component` field) — Army, Navy, Air Force, Space Force, DARPA, MDA, SOCOM, CBD, DTRA, DMEA
+- `tpoc_json` column: JSON array of `{name, email, phone}`, respecting `emailDisplay`/`phoneDisplay` API flags
+- 24 current-cycle DOD topics re-scraped with live branch + TPOC
+- 20 historical records backfilled via topic code prefix map
+- 130 old SBIR.gov records with no topic number remain `branch=NULL`
+- Frontend agency column shows branch when set; TPOC column shows name as `mailto:` link
+
+**Bug fixes**
+- `build_db_record` was missing `vehicle_type` — would crash UI-triggered SBIR scrapes
+- Default sort changed to `alignmentDesc` (was "Newest Scraped")
+- Agency filter dropdown expanded: NIH, NOAA, DOI added
 
 ---
 
 ## Current State
 
-The app is fully functional end-to-end. All Sprint 3 features are shipped and the
-database contains real, scored solicitations ready for a demo.
-
 ### DB Snapshot
-- **174 solicitations** total (24 active DOD 2025.4 cycle, rest historical)
-- **30 scored** with live alignment (24 current + 6 historical)
-- **11 capabilities** in Default Profile (1 profile)
-- **3 projects / 3 drafts** from test runs
+| Metric | Value |
+|--------|-------|
+| Total solicitations | 224 |
+| SBIR | 173 |
+| STTR | 1 |
+| Grant | 50 |
+| Scored | 224 (100%) |
+| With branch | 44 |
+| With TPOC | 15 |
+| Active keywords | 607 |
 
-### Top alignment scores (live, API-verified)
-| Score | Topic | Capability |
-|-------|-------|------------|
-| 0.85 | HR0011SB20254-15 — Unbiased Behavioral Discovery | Computer Vision |
-| 0.70 | SF254-D1207 — Affordable IR Sensors for pLEO | On-Orbit Sensors |
-| 0.70 | SF25D-T1201 — Adaptive and Intelligent Space (AIS) | Edge Computing |
-| 0.70 | SOCOM254-007 — AURORA (UAS acoustic) | UAV/UAS and Drones |
+### Profiles
+| Profile | Capabilities |
+|---------|-------------|
+| Cory Garms (id=1) | 11 |
+| Spectral Sciences (id=5) | 10 |
 
-**Best demo topic: SF254-D1207** — Space Force, IR sensors for pLEO constellation,
-0.70 on On-Orbit Sensors. Clear technical narrative, strong Phase I feasibility angle.
-
----
-
-## What Was Built This Sprint
-
-### Sprint 3 features (commit `62ed3e5`)
-- **SOTA Validation** — `backend/rag/sota.py` queries arXiv at draft-gen time;
-  injects `=== RELEVANT PRIOR ART ===` block; prompts require citations by author/year
-- **Inline Draft Editing** — `PATCH /projects/{id}/drafts/{draft_id}`; Edit/Save/Cancel
-  in DraftEditor toolbar; saves to DB, updates state in place
-- **PDF/DOCX Export** — `backend/export/docx_writer.py` + `pdf_writer.py`;
-  two GET export routes; PDF and DOCX download links in toolbar (read mode only)
-- **Draft Settings** — `tone` (technical / executive / persuasive) and `focus_area`
-  (balanced / innovation / feasibility / commercialization) dropdowns;
-  appended as modifier block to user prompt; zero overhead at defaults
-- **DOD Scraper rewrite** — dropped Playwright, pure `urllib` against public JSON API;
-  pagination fixed: was fetching 10 (page 0 only), now fetches all 24
-
-### DOD detail fix (commit `f4c6395`)
-- Discovered `/topics/api/public/topics/{topicId}/details` endpoint (unauthenticated)
-  returns `description`, `objective`, `phase1Description`, `keywords`, `technologyAreas`
-- Rewrote `dod_scraper.py` to call `/details` for every topic after the search pass
-- Topic descriptions went from 59 chars (title only) to 3–6k chars of real content
-- All 24 current topics re-upserted with full descriptions; alignment re-run; scores live
+### Top alignment scores (live)
+| Score | Agency/Branch | Title |
+|-------|--------------|-------|
+| 1.00 | DOD | Autonomous UAS ISR |
+| 0.90 | NASA | ROSES25 SAR Mission Data |
+| 0.90 | DOD | Symbiotic UAS Delivery System |
+| 0.90 | USDA | Forests and Related Resources |
+| 0.90 | DOD | Visual Position/Navigation (Computer Vision) |
 
 ---
 
@@ -85,26 +97,37 @@ cd frontend && npm run dev
 # http://localhost:5173
 ```
 
-### Refresh data (next cycle / new scrape)
+### Refresh SBIR/DOD data
 ```bash
 source backend/.venv/bin/activate
 python backend/scraper/run_scrape.py --max-pages 5 --max-detail 50
 python -c "from backend.capabilities.aligner import run_alignment; run_alignment()"
 ```
 
----
+### Run Grants.gov scrape (full)
+```bash
+# Via API (runs in background):
+curl -X POST http://localhost:8000/solicitations/scrape/grants -H 'Content-Type: application/json' -d '{"max_results": 200}'
+# Then score:
+curl -X POST 'http://localhost:8000/align/run?include_expired=true'
+```
 
-## Demo Script
+### Add/manage search keywords
+```bash
+# List active keywords
+curl http://localhost:8000/keywords?active_only=true
 
-1. **Dashboard** (`/`) — 24 active DOD topics in "Open Now", closing 2026-05-13
-2. **Solicitations** (`/solicitations`) — filter DOD, sort by alignment descending
-3. Open **SF254-D1207** (IR Sensors for pLEO, score 0.70) — show capability cards
-4. Click **Re-run Alignment** to demonstrate live rescoring
-5. Click **Create Project**
-6. In **Draft Editor**: set Tone=Persuasive, Focus=Innovation → **Generate**
-7. Show arXiv citations in the Background/Innovation sections of the draft
-8. Click **Edit** → make a change → **Save**
-9. Click **PDF** or **DOCX** — file downloads immediately
+# Add a manual keyword
+curl -X POST http://localhost:8000/keywords -H 'Content-Type: application/json' -d '{"keyword": "synthetic aperture radar"}'
+
+# Deactivate a noisy keyword (get id from list first)
+curl -X PATCH 'http://localhost:8000/keywords/42?active=false'
+```
+
+### Re-seed keywords (after adding new capabilities)
+```bash
+python -m backend.scraper.seed_keywords
+```
 
 ---
 
@@ -113,19 +136,26 @@ python -c "from backend.capabilities.aligner import run_alignment; run_alignment
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
-| GET | /solicitations | List (filter, sort, paginate) |
+| GET | /dashboard?profile_id=1 | Lifecycle buckets, sorted by alignment |
+| GET | /solicitations | List (filter, sort, paginate, watched_only) |
 | GET | /solicitations/{id} | Single solicitation |
-| POST | /solicitations/scrape | Trigger background scrape |
-| GET | /solicitations/scrape/status | Scrape job status |
-| GET | /dashboard | Lifecycle buckets + agency calendar |
+| PATCH | /solicitations/{id}/watch?watched=true | Toggle watch |
+| POST | /solicitations/scrape | Trigger SBIR/DOD background scrape |
+| GET | /solicitations/scrape/status | SBIR scrape status |
+| POST | /solicitations/scrape/grants | Trigger Grants.gov scrape |
+| GET | /solicitations/scrape/grants/status | Grants scrape status |
 | GET | /profiles | List profiles |
 | POST | /profiles | Create profile |
 | GET | /capabilities?profile_id=X | List capabilities |
 | POST | /capabilities | Add capability |
-| POST | /align/run | Global alignment pass |
+| GET | /keywords?active_only=true | List search keywords |
+| POST | /keywords | Add keyword |
+| PATCH | /keywords/{id}?active=false | Toggle active |
+| DELETE | /keywords/{id} | Hard delete |
+| POST | /align/run?include_expired=true | Global alignment pass |
 | GET | /align/status | Alignment job status |
 | GET | /solicitations/{id}/alignment | Scores for a solicitation |
-| POST | /solicitations/{id}/align | Re-run alignment |
+| POST | /solicitations/{id}/align | Re-run alignment (single) |
 | POST | /projects | Create project |
 | GET | /projects/{id} | Get project + scores |
 | POST | /projects/{id}/generate | Generate draft (tone, focus_area) |
@@ -136,53 +166,108 @@ python -c "from backend.capabilities.aligner import run_alignment; run_alignment
 
 ---
 
-## Recommended Next Steps
+## Sprint 5 Plan (Next 5 Days)
 
-Ordered by value-to-effort ratio. Items 1–3 are the most impactful for the core loop.
+Ordered by value-to-effort ratio.
 
-### 1. Score historical solicitations (high value, low effort)
-`run_alignment()` only scores non-expired solicitations. 144 historical records have no
-scores, including many domain-relevant topics (Lidar Tomography, UAS ISR, Remote Sensing
-Satellite, etc.) from prior cycles. These are the best demo candidates for draft generation.
+### Day 1 — SOTA Caching + Draft Revision History UI
+Two quick wins carried over from Sprint 4 backlog. Zero new concepts, just filling in gaps.
 
-Fix: add `exclude_expired=False` option to the aligner, or run a one-time backfill:
-```python
-from backend.capabilities.aligner import run_alignment, score_solicitation
-# then call with solicitation_ids=[395, 410, 413, ...] 
+**SOTA caching** (`backend/rag/sota.py`):
+- Add `sota_cache` table: `(solicitation_id, query, papers_json, fetched_at)` with 7-day TTL check
+- Before every arXiv call, check cache by solicitation_id; return cached papers if fresh
+- Eliminates redundant fetches on repeated draft generation for the same topic
+- Impact: ~2s faster draft gen, near-zero arXiv cost for re-runs
+
+**Draft revision history UI** (`frontend/src/views/DraftEditor.jsx`):
+- The sidebar already lists drafts by timestamp; add: section_type badge, char count
+- Add a simple diff view between the selected draft and the previous one using a unified diff endpoint
+- Backend: `GET /projects/{id}/drafts/{draft_id}/diff?against={other_id}` using Python `difflib`
+
+---
+
+### Day 2 — Keyword Management UI
+607 active keywords is too many to manage via raw API calls. A simple UI page lets you
+prune noise, add domain terms, and see which source each keyword came from.
+
+**Backend**: already complete (`/keywords` CRUD).
+
+**Frontend** — new view `frontend/src/views/Keywords.jsx`:
+- Table: keyword, source badge (capability / csv / manual), active toggle switch
+- Search/filter bar to find terms quickly
+- "Add keyword" inline form at the top
+- Add route `/keywords` to `App.jsx` and link in NavBar
+
+This is needed before running a full 200-result Grants.gov scrape — gives you the ability
+to deactivate irrelevant terms (e.g. biomedical NSF terms) that are generating noise.
+
+---
+
+### Day 3 — SAM.gov Scraper (BAAs and OTAs)
+SAM.gov Opportunities API is public and key-free at the base tier (10 req/min).
+
 ```
-Or change `get_all_solicitations(limit=10000)` in `aligner.py` to pass
-`exclude_expired=False`.
+GET https://api.sam.gov/opportunities/v2/search
+  ?api_key=REPLACE_OR_OMIT
+  &ptype=r  (solicitation type: r=sources sought, k=combined synopsis, p=pre-solicitation)
+  &keywords=lidar+remote+sensing
+  &active=Yes
+  &limit=25
+```
 
-### 2. Solicitation Watch List / Bookmarks (high value, medium effort)
-Users need to track specific topics without creating a full project. Add a `watched`
-boolean column to `solicitations` or a separate `watches` table (solicitation_id, notes,
-added_at). Surface as a "Saved" tab on the Solicitations list and a star/bookmark icon
-on each card. This mirrors how real proposal managers work — they track 10–20 topics
-and decide which 2–3 to pursue.
+Strategy:
+- Same keyword-cluster approach as Grants.gov (use `get_all_keywords(active_only=True)`)
+- Filter by `ptype=k` (combined synopsis = BAA-equivalent) and `ptype=p` (pre-solicitation)
+- `vehicle_type = 'BAA'` or `'OTA'` based on `type` field in response
+- Upsert via existing `upsert_solicitation`
+- Route: `POST /solicitations/scrape/sam`, `GET /solicitations/scrape/sam/status`
 
-### 3. Expanded scrapers — USDA, NASA (medium value, medium effort)
-The DOD scraper approach (find the hidden JSON API, call it directly) should work for
-other agencies. NASA SBIR uses `sbir.nasa.gov`; USDA uses `nifa.usda.gov`. These are
-high-priority for the user's domain (forestry, precision ag, remote sensing for
-agriculture). Pattern from `dod_scraper.py` is reusable.
+If the key-free tier proves rate-limited, fall back to the daily bulk CSV extract
+(posted at `https://api.sam.gov/opportunities/v2/extracts`).
 
-### 4. DOD topic detail enrichment on re-scrape (low effort, already architected)
-The `run_scrape.py` → `run_sync()` path already calls `/details` for every topic.
-But the SBIR.gov scraper path still uses title-only for DOD topics that appear there.
-Consider deduplicating: after scraping SBIR.gov, if `agency=DOD` and the topic
-already has a description from the DOD scraper, don't overwrite it.
+---
 
-### 5. User authentication (medium effort, needed before multi-user)
-Currently single-user, no auth. JWT + FastAPI is straightforward. Profiles are already
-multi-tenant in the schema — just need a `users` table and FK on `profiles`. Needed
-before sharing the app with a second person.
+### Day 4 — Solicitation Detail Page Improvements
+The detail page (`SolicitationDetail.jsx`) was built in Sprint 1 and hasn't been touched since.
+It needs to reflect the new data fields added in Sprints 3–4.
 
-### 6. Draft revision history UI (low effort)
-Backend already stores all drafts with timestamps. The sidebar Draft History list is
-present but minimal. Add section_type badge, char count, and a diff view between
-revisions (simple line-by-line diff using Python's `difflib`, rendered in the UI).
+Items to add:
+- **Branch badge** next to agency (e.g. `DOD / Army` with a colored chip)
+- **Vehicle type badge** (`SBIR`, `Grant`, `BAA`) in the header
+- **TPOC card** — name, email link, phone if public; visible at top of page, not buried
+- **Watch star** — same toggle as the list view, so you can star from the detail page
+- **Keyword chips** from `keywords_extra` / `tech_areas` (already in DOD scraper output, not surfaced)
 
-### 7. SOTA caching (low effort, cost reduction)
-`sota.py` calls arXiv on every draft generation for the same solicitation. Add a
-`sota_cache` table (solicitation_id, query, papers_json, fetched_at) with a 7-day TTL.
-Eliminates redundant fetches and makes draft gen faster.
+---
+
+### Day 5 — User Authentication (JWT)
+Needed before sharing the app with a second person. The schema is already multi-tenant
+(profiles have FKs that can be extended).
+
+- Add `users` table: `id, email, hashed_password, created_at`
+- Add `user_id` FK to `profiles`
+- JWT auth via `python-jose` + `passlib[bcrypt]`; FastAPI `Depends` on protected routes
+- Login/register endpoints: `POST /auth/register`, `POST /auth/login` → returns JWT
+- Frontend: login page, store token in `localStorage`, attach as `Authorization: Bearer` header
+- Profiles and capabilities scoped to `user_id` — other users cannot see your data
+
+Leave scrape endpoints public (or protected by a simple admin flag) since they're
+triggered manually and don't expose PII.
+
+---
+
+## Open Questions for Next Session
+
+1. **SAM.gov**: Key-free public tier vs. requesting a free API key from SAM.gov?
+   A key allows 100 req/min vs. ~10 without — worth the 5-minute registration.
+
+2. **Keyword pruning**: Before running the full 200-result Grants.gov scrape, review
+   the keyword list via the new Keywords UI (Day 2) to deactivate biomedical/irrelevant terms.
+
+3. **Spectral Sciences profile alignment**: The Spectral Sciences profile (id=5) capabilities
+   were seeded but alignment has not been run against the full 224-solicitation corpus.
+   Run: `POST /align/run?include_expired=true` with profile_id context once the aligner
+   supports per-profile runs (currently scores all capabilities in DB simultaneously).
+
+4. **Authentication scope**: Single user (you) or immediately multi-user (e.g., share with
+   a colleague at Spectral Sciences)? Affects whether Day 5 is worth the effort now.

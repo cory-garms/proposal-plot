@@ -36,3 +36,7 @@ frontend/.env.local
 
 # Logs
 *.log
+
+# Data tables  
+SAM_ContractOpportunitiesFull.csv
+ssi_sbir_history.csv

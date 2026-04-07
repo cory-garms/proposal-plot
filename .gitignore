@@ -40,3 +40,4 @@ frontend/.env.local
 # Data tables  
 SAM_ContractOpportunitiesFull.csv
 ssi_sbir_history.csv
+backend/.proposalEnv/

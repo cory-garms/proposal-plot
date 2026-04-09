@@ -44,20 +44,25 @@ def _validate_config() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _validate_config()
-    print("[startup] initializing database...", file=sys.stderr)
-    try:
-        await asyncio.to_thread(init_db)
-    except Exception as e:
-        print(f"[startup] FATAL: init_db failed: {e}", file=sys.stderr)
-        raise
-    print("[startup] database ready", file=sys.stderr)
+    # Run DB init in a background task so the health check can respond immediately.
+    # If the DB file is corrupted this would otherwise block the lifespan forever.
+    asyncio.create_task(asyncio.to_thread(_init_db_safe))
     try:
         start_scheduler()
     except Exception as e:
         print(f"[startup] WARNING: scheduler failed to start: {e}", file=sys.stderr)
-    print("[startup] complete", file=sys.stderr)
+    print("[startup] ready", file=sys.stderr)
     yield
     stop_scheduler()
+
+
+def _init_db_safe() -> None:
+    print("[startup] initializing database...", file=sys.stderr)
+    try:
+        init_db()
+        print("[startup] database ready", file=sys.stderr)
+    except Exception as e:
+        print(f"[startup] ERROR: init_db failed: {e}", file=sys.stderr)
 
 
 app = FastAPI(title="ProposalPilot API", version="0.1.0", lifespan=lifespan)

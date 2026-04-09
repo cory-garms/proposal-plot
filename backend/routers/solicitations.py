@@ -1,11 +1,12 @@
 import asyncio
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Depends
 from pydantic import BaseModel
 
 from backend.db.crud import get_all_solicitations, get_solicitation_by_id, upsert_solicitation, set_solicitation_watched
 from backend.scraper.sbir_scraper import run as scrape_run
 from backend.scraper.run_scrape import build_db_record
+from backend.routers.auth import require_admin
 
 router = APIRouter(prefix="/solicitations", tags=["solicitations"])
 
@@ -85,7 +86,7 @@ def watch_solicitation(solicitation_id: int, watched: bool = True):
 
 
 @router.post("/scrape")
-def trigger_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
+def trigger_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks, _: dict = Depends(require_admin)):
     if _scrape_status["running"]:
         raise HTTPException(status_code=409, detail="Scrape already in progress")
     background_tasks.add_task(_run_scrape, req)
@@ -115,7 +116,7 @@ async def _run_scrape(req: ScrapeRequest) -> None:
 
 
 @router.post("/scrape/grants")
-def trigger_grants_scrape(req: GrantsScrapeRequest, background_tasks: BackgroundTasks):
+def trigger_grants_scrape(req: GrantsScrapeRequest, background_tasks: BackgroundTasks, _: dict = Depends(require_admin)):
     if _grants_status["running"]:
         raise HTTPException(status_code=409, detail="Grants scrape already in progress")
     background_tasks.add_task(_run_grants_scrape, req.max_results)
@@ -128,7 +129,7 @@ def grants_scrape_status():
 
 
 @router.post("/scrape/sam")
-def trigger_sam_scrape(req: SamScrapeRequest, background_tasks: BackgroundTasks):
+def trigger_sam_scrape(req: SamScrapeRequest, background_tasks: BackgroundTasks, _: dict = Depends(require_admin)):
     if _sam_status["running"]:
         raise HTTPException(status_code=409, detail="SAM scrape already in progress")
     background_tasks.add_task(_run_sam_scrape, req.max_results)
@@ -157,7 +158,7 @@ async def _run_sam_scrape(max_results: int) -> None:
 
 
 @router.post("/import/sam-csv")
-def trigger_sam_csv_import(req: SamCsvRequest, background_tasks: BackgroundTasks):
+def trigger_sam_csv_import(req: SamCsvRequest, background_tasks: BackgroundTasks, _: dict = Depends(require_admin)):
     if _sam_csv_status["running"]:
         raise HTTPException(status_code=409, detail="SAM CSV import already in progress")
     # Only allow plain filenames — no path traversal

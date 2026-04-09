@@ -1,0 +1,13 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+backend/.venv
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc
+*.pyo
+.git
+*.csv
+*.md

@@ -1,230 +1,229 @@
 # HANDOFF
 
-**Last updated:** 2026-04-02 (Sprint 5 complete — Claude)
+**Last updated:** 2026-04-09 (Sprint 9 deploy — Claude)
 
 ---
 
-## What Was Built This Session (Claude)
+## Immediate Next Steps (Start Here)
 
-### Sprint 5 features
+Sprint 9: deploy live. GitHub Pages URL is `https://cory-garms.github.io/proposal-pilot/`.
+`render.yaml` and all CORS references have been updated to `https://cory-garms.github.io`.
 
-**Day 1 — SOTA Caching**
-- `sota_cache(solicitation_id, query, papers_json, fetched_at)` table — 7-day TTL
-- `fetch_papers_cached()` in `backend/rag/sota.py` wraps arXiv fetch; cache hit = ~2s faster draft gen
-- `context_builder.py` uses cached fetch
+### Step 1 — GitHub Pages setup
+1. Repo Settings → Pages → Source: **GitHub Actions**
+2. Repo Settings → **Secrets** → New: `VITE_API_BASE_URL` = `https://proposalpilot-api.onrender.com` (confirm exact service name in Render after blueprint deploys)
+3. Repo Settings → **Variables** → New: `VITE_BASE_PATH` = `/proposal-pilot/`
+4. Push to `main` (already done) — workflow fires automatically, deploys to `https://cory-garms.github.io/proposal-pilot/`
 
-**Day 1 — Draft Revision History UI**
-- `GET /projects/{id}/drafts/{draft_id}/diff?against={other_id}` — unified diff via `difflib`
-- Draft history sidebar: section type badge + character count per entry
-- "Diff" toggle button in content area — color-coded line view (green/red/blue)
+### Step 2 — Render backend setup
+1. Render dashboard → **New → Blueprint** → connect `cory-garms/proposal-pilot` repo → reads `render.yaml` automatically
+2. Set your LLM API key in Render dashboard → Environment → `ANTHROPIC_API_KEY`
+3. After first deploy, confirm the service URL and update `VITE_API_BASE_URL` secret in GitHub if it differs
 
-**Day 2 — Keyword Management UI**
-- `backend/routers/keywords.py`: full CRUD (`GET/POST/PATCH/DELETE /keywords`)
-- `frontend/src/views/Keywords.jsx`: search/filter bar, source badges, active toggle, inline add, delete
-- `/keywords` route + NavBar link
+### Step 3 — Upload the database (CONFIRMED: use existing local DB)
+The Render disk starts empty. Upload `proposalpilot.db` from your local machine:
+```bash
+# Option A: Render CLI (install: npm i -g @render/cli or brew install render)
+render ssh proposalpilot-api
+# In a separate terminal:
+scp proposalpilot.db <paste-ssh-target-from-render-cli-output>:/data/proposalpilot.db
 
-**Day 3 — SAM.gov Scraper**
-- `backend/scraper/sam_scraper.py`: 20 domain clusters × `ptype=k,p`; TPOC extraction
-- Key-free: 6.5s/req. Set `SAM_API_KEY` in `.env` for 0.7s/req (100 req/min)
-- Routes: `POST /solicitations/scrape/sam`, `GET /solicitations/scrape/sam/status`
+# Option B: Render dashboard → Shell tab
+# First, get the SSH address from Render dashboard → Service → Shell → "SSH" button
+# Then from local WSL terminal:
+scp /home/cgarms/Sandbox/proposal_pilot/proposal-pilot/proposalpilot.db \
+    <render-ssh-user@render-ssh-host>:/data/proposalpilot.db
+```
+After upload, restart the service from the Render dashboard so FastAPI picks up the new DB.
 
-**Day 4 — Solicitation Detail Improvements**
-- `SolicitationDetail.jsx`: agency/branch chip, vehicle type badge, TPOC card, watch star, `navigate(-1)` back
+### Step 4 — Verify
+1. Open `https://cory-garms.github.io/proposal-pilot/` — should show Login page
+2. Login as `cgarms@spectral.com` with your local password
+3. Dashboard should show solicitations populated from the uploaded DB
+4. Run a small alignment from Admin to confirm LLM calls work
 
-**Day 5 — User Authentication (JWT)**
-- `users` table + `profiles.user_id` nullable FK (existing data unaffected)
-- `backend/routers/auth.py`: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
-- HS256 JWT, bcrypt passwords, 72h expiry. `JWT_SECRET` in `.env`
-- Protected routes: `POST /projects`, `POST /projects/{id}/generate`, `PATCH /projects/{id}/drafts/{id}`
-- Frontend: `Login.jsx`, axios interceptors (attach token, redirect on 401), NavBar "Sign out"
+---
+
+## What Was Built This Session (Sprint 8)
+
+### Bug Fixes
+- **Capability delete** — was failing silently due to FK constraint on `solicitation_capability_scores`. Fixed: delete scores first, then capability.
+- **Admin profile dropdown** — only showed admin's own + shared profiles. Fixed: `get_all_profiles(include_all=True)` for admin users.
+- **Score button on shared profile** — 403 at backend. Fixed: button disabled when selected profile has `shared=1`.
+- **Trailing "0" on profile heading** — `profile.shared` is SQLite integer `0`; React rendered it as text. Fixed: `!!profile.shared`.
+
+### Capability Generator
+- **Broader categories** — prompt now instructs LLM to use wide domain names and include both specific + parent terms in keywords. Fixes low match rate.
+- **Google Scholar extractor** — `_extract_google_scholar()` in `extractor.py`: name, interests, publication list.
+- **ResearchGate extractor** — `_extract_researchgate()`: scrapes HTML; graceful error when Cloudflare blocks.
+- **Auto-routing** — `extract_from_url()` detects hostname and routes to specialized extractor.
+
+### Dev Tooling
+- `backend/scraper/reset_beta_users.py` — wipes all non-admin users/profiles/capabilities, recreates the three betas with `Welcome!2026`.
+
+### Infrastructure
+- **Content-hash deduplication** — `solicitations.content_hash` (SHA-256 title+description), `solicitation_capability_scores.scored_hash`. `get_scored_pairs()` now invalidates stale pairs on re-scrape. Eliminates redundant LLM calls when solicitation content hasn't changed.
+- **CORS** — `CORS_ORIGINS` env var in `config.py`. Defaults to `*` locally; `render.yaml` sets it to `https://cgarms.github.io`.
+- **GitHub Actions** — `.github/workflows/deploy-frontend.yml`. Triggers on `frontend/` changes to `main`. Uses `VITE_API_BASE_URL` secret + `VITE_BASE_PATH` variable.
+- **SPA routing** — `frontend/public/404.html` + `index.html` inline redirect script. Handles direct-URL access on GitHub Pages without hash routing.
+- **Render manifest** — `render.yaml`: web service + 1 GB persistent disk at `/data`. Starter plan ($7/mo) required for disk.
 
 ---
 
 ## Current State
 
-### DB Snapshot
-| Metric | Value |
-|--------|-------|
-| Total solicitations | 224 |
-| SBIR | 173 |
-| STTR | 1 |
-| Grant | 50 |
-| Scored | 224 (100%) |
-| With branch | 44 |
-| With TPOC | 15 |
-| Active keywords | 607 |
-| Users | 0 (register at `/login` on first run) |
-| SOTA cache entries | 0 (populates on first draft gen) |
+### Database (local dev — `proposalpilot.db`)
+| Table | Count |
+|-------|-------|
+| solicitations | 824 |
+| scored pairs | 324 |
+| capabilities | 39 |
+| profiles | 5 |
+| users | 4 |
+| active keywords | 776 |
 
 ### Profiles
-| Profile | Capabilities |
-|---------|-------------|
-| Cory Garms (id=1) | 11 |
-| Spectral Sciences (id=5) | 10 |
+| ID | Name | Owner | Capabilities |
+|----|------|-------|-------------|
+| 1 | Cory Garms | cgarms (admin) | 11 |
+| 2 | Spectral Sciences | shared (all users) | 10 |
+| 3 | Panfili | rpanfili | 6 |
+| 4 | David Stelter | dstelter | 6 |
+| 5 | Ramona Taylor | rtaylor | 6 |
 
-### Top alignment scores (live)
-| Score | Agency/Branch | Title |
-|-------|--------------|-------|
-| 1.00 | DOD | Autonomous UAS ISR |
-| 0.90 | NASA | ROSES25 SAR Mission Data |
-| 0.90 | DOD | Symbiotic UAS Delivery System |
-| 0.90 | USDA | Forests and Related Resources |
-| 0.90 | DOD | Visual Position/Navigation (Computer Vision) |
+### Users
+| Email | Role |
+|-------|------|
+| cgarms@spectral.com | admin |
+| rpanfili@spectral.com | user |
+| dstelter@spectral.com | user |
+| rtaylor@spectral.com | user |
 
 ---
 
-## How to Run
+## How to Run (Local Dev)
 
-### First-time setup
 ```bash
-# 1. Start backend
-source backend/.venv/bin/activate
+cd proposal-pilot
+
+# Backend
+source backend/.ppEnv/bin/activate
 uvicorn backend.main:app --reload
 
-# 2. Start frontend
+# Frontend (separate terminal)
 export PATH="$HOME/.fnm:$PATH" && eval "$(fnm env)"
 cd frontend && npm run dev
 
-# 3. Open http://localhost:5173/login — register your account
-#    (SAM_API_KEY and JWT_SECRET should be set in .env before production use)
+# Open http://localhost:5173
+# Login: cgarms@spectral.com
 ```
 
-### Scrape & score
+### Useful dev commands
 ```bash
-# SBIR/DOD
-python backend/scraper/run_scrape.py --max-pages 5 --max-detail 50
+# Reset beta users to never-logged-in state
+python -m backend.scraper.reset_beta_users
 
-# Grants.gov (background via API — prune keywords first via /keywords UI)
-curl -X POST http://localhost:8000/solicitations/scrape/grants -H 'Content-Type: application/json' -d '{"max_results": 200}'
+# Re-seed users if DB is fresh
+python -m backend.scraper.seed_users
 
-# SAM.gov (key-free, slow — set SAM_API_KEY in .env for full speed)
-curl -X POST http://localhost:8000/solicitations/scrape/sam -H 'Content-Type: application/json' -d '{"max_results": 100}'
+# Trigger scrape + full alignment
+curl -X POST http://localhost:8000/solicitations/scrape/sam \
+  -H 'Authorization: Bearer <token>' \
+  -d '{"max_results": 100}'
 
-# Re-score everything
-curl -X POST 'http://localhost:8000/align/run?include_expired=true'
-```
-
-### Re-seed keywords (after adding new capabilities)
-```bash
-python -m backend.scraper.seed_keywords
+curl -X POST 'http://localhost:8000/align/run?skip_scored=true' \
+  -H 'Authorization: Bearer <token>'
 ```
 
 ---
 
-## Full API Reference
+## Architecture Overview
 
-| Method | Path | Auth required | Description |
-|--------|------|---------------|-------------|
-| POST | /auth/register | No | Create account → JWT |
-| POST | /auth/login | No | Login (form) → JWT |
-| GET | /auth/me | Yes | Current user |
-| GET | /health | No | Health check |
-| GET | /dashboard?profile_id=1 | No | Lifecycle buckets |
-| GET | /solicitations | No | List (filter, sort, paginate) |
-| GET | /solicitations/{id} | No | Single solicitation |
-| PATCH | /solicitations/{id}/watch | No | Toggle watch |
-| POST | /solicitations/scrape | No | Trigger SBIR/DOD scrape |
-| GET | /solicitations/scrape/status | No | SBIR scrape status |
-| POST | /solicitations/scrape/grants | No | Trigger Grants.gov scrape |
-| GET | /solicitations/scrape/grants/status | No | Grants scrape status |
-| POST | /solicitations/scrape/sam | No | Trigger SAM.gov scrape |
-| GET | /solicitations/scrape/sam/status | No | SAM scrape status |
-| GET | /profiles | No | List profiles |
-| POST | /profiles | No | Create profile |
-| GET | /capabilities?profile_id=X | No | List capabilities |
-| POST | /capabilities | No | Add capability |
-| GET | /keywords | No | List keywords |
-| POST | /keywords | No | Add keyword |
-| PATCH | /keywords/{id}?active= | No | Toggle active |
-| DELETE | /keywords/{id} | No | Delete keyword |
-| POST | /align/run | No | Global alignment pass |
-| GET | /align/status | No | Alignment job status |
-| GET | /solicitations/{id}/alignment | No | Scores for a solicitation |
-| POST | /solicitations/{id}/align | No | Re-run alignment (single) |
-| POST | /projects | **Yes** | Create project |
-| GET | /projects/{id} | No | Get project + scores |
-| POST | /projects/{id}/generate | **Yes** | Generate draft |
-| GET | /projects/{id}/drafts | No | List drafts |
-| PATCH | /projects/{id}/drafts/{draft_id} | **Yes** | Update draft content |
-| GET | /projects/{id}/drafts/{draft_id}/diff | No | Unified diff between drafts |
-| GET | /projects/{id}/drafts/{draft_id}/export/pdf | No | Download PDF |
-| GET | /projects/{id}/drafts/{draft_id}/export/docx | No | Download DOCX |
+```
+frontend/                    React + Vite + TailwindCSS v4
+  src/
+    views/                   Dashboard, SolicitationList, Capabilities,
+                             Keywords, Admin, GenerateCapabilities,
+                             ChangePassword, Login, DraftEditor
+    components/NavBar.jsx
+    api/client.js            Axios instance with JWT interceptors
 
----
-
-## Sprint 6 Plan
-
-Ordered by value-to-effort ratio.
-
-### Day 1 — Scrape Admin UI
-Right now all scrape triggers require raw `curl` commands. A single admin page removes that friction.
-
-**Frontend** — new view `frontend/src/views/Admin.jsx`:
-- Three scraper cards: SBIR/DOD, Grants.gov, SAM.gov
-- Each card: "Run Scrape" button with `max_results` input, live status polling every 5s while running, last-run stats (persisted/errors)
-- "Run Alignment" button with status indicator
-- `/admin` route + NavBar link (show only when `localStorage.getItem('token')` is set)
-
-**Backend**: no changes needed — all endpoints already exist.
+backend/
+  main.py                    FastAPI app, lifespan, CORS, router registration
+  config.py                  All env vars (LLM, DB, auth, CORS, scheduler)
+  database.py                SQLite connection, WAL mode, additive migrations
+  scheduler.py               APScheduler nightly alignment
+  llm/                       Provider abstraction (Anthropic, OpenAI-compat)
+  routers/
+    auth.py                  JWT login/register/me/password-change
+    capabilities.py          Profiles, capabilities CRUD, alignment triggers
+    dashboard.py             Per-user lifecycle buckets (TPOC, open, closing…)
+    solicitations.py         List, detail, watch, scrape triggers
+    keywords.py              Keyword CRUD
+    generate_capabilities.py URL + file → LLM → capability suggestions
+    projects.py              Draft generation
+  db/crud.py                 All DB operations
+  capabilities/
+    aligner.py               Two-pass keyword+LLM scoring
+    prompts.py               Alignment prompt templates
+  rag/
+    extractor.py             ORCID API, Google Scholar, ResearchGate, PDF, DOCX
+    capability_generator.py  LLM → structured capability list
+    generator.py             Draft generation
+    context_builder.py       RAG context assembly
+  scraper/
+    seed_users.py            Create admin + beta accounts
+    reset_beta_users.py      Dev reset — wipe non-admin users
+```
 
 ---
 
-### Day 2 — Profile → User Scoping
-The `users` table and `profiles.user_id` column exist but aren't enforced. This day wires them.
+## Known Issues / Deferred Work
 
-- One-time migration: `UPDATE profiles SET user_id = (SELECT id FROM users LIMIT 1)` after first registration
-- Add `user_id` to `get_all_profiles()` filter: only return profiles where `user_id = current_user.id`
-- Protect `POST/PATCH /profiles` and `POST/PATCH /capabilities` with `require_user`
-- Frontend: after login, refresh profile list (currently stale if a second user is added)
-- Leave solicitations and drafts unscoped for now — no PII, and shared access is useful
+### Sprint 9 backlog
+- **Embedding-based pre-filter** — replace keyword threshold with cosine similarity on `text-embedding-3-small` vectors. Cuts LLM scoring calls ~60%. Defer until production traffic data shows whether content-hash fix is sufficient.
+- **Render cold-start** — free Render tier spins down after 15 min idle (~30s cold start). Starter plan ($7/mo, already required for disk) stays warm.
+- **`bcrypt<4.0.0` pin** — `passlib 1.7.4` breaks with `bcrypt>=4`. Pin is in `requirements.txt`. Don't upgrade bcrypt.
+- **SAM CSV import** — `backend/scraper/sam_csv_parser.py` and `POST /solicitations/import/sam-csv` exist but are untested. May need validation before relying on it.
+- **Capability auto-score on edit** — `PATCH /capabilities/{id}` now triggers background alignment (added this session). Not yet verified end-to-end.
 
----
+### API auth table (updated)
+Routes that require auth (`require_user` or stricter):
 
-### Day 3 — Capability Management UI
-Capabilities can only be added/edited via seed scripts or raw API. A UI removes this bottleneck.
-
-**Frontend** — new view `frontend/src/views/Capabilities.jsx`:
-- List cards per capability: name, description, keyword chips (first 8), edit/delete
-- "Add capability" form: name, description, keywords (comma-separated)
-- On save: re-seed keywords from capability (`POST /keywords` for each new keyword) and trigger alignment
-
-**Backend**: `PATCH /capabilities/{id}` and `DELETE /capabilities/{id}` endpoints needed (currently only `POST`).
-
----
-
-### Day 4 — Per-Profile Alignment
-The aligner (`backend/capabilities/aligner.py`) scores all capabilities across all profiles in one pass. This means running alignment for Spectral Sciences also re-scores Cory Garms capabilities.
-
-- Add `profile_id` query param to `POST /align/run?profile_id=1`
-- In `run_alignment()`, filter capabilities by profile before scoring
-- In Admin UI (Day 1), expose profile selector for the alignment run button
+| Method | Path | Auth |
+|--------|------|------|
+| POST | /auth/password | require_user |
+| POST | /profiles | require_user |
+| POST | /capabilities | require_user (own profile) |
+| PATCH | /capabilities/{id} | require_user (own profile) |
+| DELETE | /capabilities/{id} | require_user (own profile) |
+| POST | /align/run | require_own_profile_or_admin |
+| POST | /solicitations/scrape* | require_admin |
+| POST | /solicitations/import/sam-csv | require_admin |
+| POST | /capabilities/generate/* | require_user |
+| POST | /projects | require_user |
+| POST | /projects/{id}/generate | require_user |
+| PATCH | /projects/{id}/drafts/{id} | require_user |
 
 ---
 
-### Day 5 — SAM.gov Test Run + Dedup Audit
-Before merging SAM results into the main workflow, validate data quality.
+## File Inventory (changed this sprint)
 
-- Run `POST /solicitations/scrape/sam` with `max_results=50` (key-free, ~6 min)
-- Inspect results via `/solicitations?agency=DOD&sort_by=alignment&sort_desc=true`
-- Check for title/description quality — SAM descriptions are often short; add fallback to `raw_html` parse if `description` is under 200 chars
-- Add `source` column to `solicitations` table: `sbir`, `grants`, `sam` — useful for filtering and debugging
-
----
-
-## Open Questions for Next Session
-
-1. **JWT_SECRET**: Set a real secret in `.env` before using the app with real data:
-   ```bash
-   echo "JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> .env
-   ```
-
-2. **SAM_API_KEY**: Free registration at `https://sam.gov/profile/details` unlocks 100 req/min vs 10. Worth the 5-minute signup before running the full SAM scrape.
-
-3. **Keyword pruning**: 607 keywords includes some biomedical/unrelated terms from `ssi_sbir_history.csv`. Use the `/keywords` UI to deactivate noise before running a full 200-result Grants.gov scrape.
-
-4. **Profile scoping decision**: Should Spectral Sciences profile data be hidden from other users (once multi-user is live), or is shared read access acceptable within your team?
-
-5. **Profile alignment gap**: Spectral Sciences (id=5) capabilities have not been aligned against the full 224-solicitation corpus since the profile was created. Run:
-   ```bash
-   curl -X POST 'http://localhost:8000/align/run?include_expired=true'
-   ```
+| File | Change |
+|------|--------|
+| `backend/database.py` | +2 migrations: `solicitations.content_hash`, `solicitation_capability_scores.scored_hash` |
+| `backend/config.py` | +`CORS_ORIGINS` |
+| `backend/main.py` | CORS reads from `CORS_ORIGINS` config |
+| `backend/db/crud.py` | `_content_hash()`, `get_all_profiles(include_all)`, `delete_capability` cascades scores, `get_scored_pairs` hash-aware, `upsert_score` stores hash, `upsert_solicitation` stores hash |
+| `backend/capabilities/aligner.py` | passes `content_hash` to `upsert_score` |
+| `backend/rag/extractor.py` | Google Scholar + ResearchGate extractors; `extract_from_url` routes by hostname |
+| `backend/rag/capability_generator.py` | Broader keyword/category prompt |
+| `backend/routers/capabilities.py` | Admin sees all profiles; `edit_capability` triggers background alignment |
+| `frontend/src/views/Capabilities.jsx` | Score button respects `shared`; `!!profile.shared` fix |
+| `frontend/index.html` | Title fix; SPA redirect script |
+| `frontend/public/404.html` | GitHub Pages 404 redirect |
+| `frontend/vite.config.js` | `base` from `VITE_BASE_PATH` |
+| `.env.example` | +`CORS_ORIGINS`, +`DB_PATH` production example |
+| `.github/workflows/deploy-frontend.yml` | **new** — GitHub Actions deploy |
+| `render.yaml` | **new** — Render Blueprint |
+| `backend/scraper/reset_beta_users.py` | **new** — dev reset script |

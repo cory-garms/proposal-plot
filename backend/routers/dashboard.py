@@ -1,14 +1,14 @@
-from fastapi import APIRouter
-from backend.db.crud import get_all_solicitations
+from fastapi import APIRouter, Depends, Query
+from typing import Optional
+from backend.db.crud import get_all_solicitations, get_all_profiles
 from backend.database import get_connection
+from backend.routers.auth import get_current_user
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-PROFILE_CORY = 1
-PROFILE_SSI = 2
-MIN_SCORE = 0.40       # only show solicitations where at least one profile scores >= this
-MAX_PER_SECTION = 12   # cap cards per dashboard section
+MIN_SCORE = 0.40
+MAX_PER_SECTION = 12
 
 
 def get_agency_schedules():
@@ -18,7 +18,6 @@ def get_agency_schedules():
 
 
 def _bulk_top_scores(profile_id: int, n: int = 3) -> dict:
-    """Return {solicitation_id: [top-n score dicts]} for all solicitations, one profile."""
     sql = """
         SELECT sc.solicitation_id, sc.score, c.name AS capability
         FROM solicitation_capability_scores sc
@@ -51,16 +50,39 @@ def _score_color(score: float | None) -> str:
 
 
 @router.get("")
-def get_dashboard_summary():
+def get_dashboard_summary(
+    profile_id: Optional[int] = Query(None),
+    user: dict | None = Depends(get_current_user),
+):
+    # Derive profiles visible to this user
+    user_id = user["id"] if user else None
+    profiles = get_all_profiles(user_id=user_id)
+
+    # Fetch scores for all visible profiles
+    profile_score_maps = {
+        p["id"]: {
+            "name": p["name"],
+            "map": _bulk_top_scores(p["id"]),
+        }
+        for p in profiles
+    }
+
+    # Admin can pass profile_id to set the primary sort profile.
+    # Otherwise use the first owned (non-shared) profile.
+    if profile_id and any(p["id"] == profile_id for p in profiles):
+        primary_id = str(profile_id)
+    else:
+        primary_profile = next(
+            (p for p in profiles if not p.get("shared")),
+            profiles[0] if profiles else None,
+        )
+        primary_id = str(primary_profile["id"]) if primary_profile else "1"
+
     solicitations = get_all_solicitations(
         limit=1000,
         exclude_expired=False,
-        profile_id=str(PROFILE_CORY),
+        profile_id=primary_id,
     )
-
-    # Two bulk queries instead of 2×N per-row queries
-    cory_map = _bulk_top_scores(PROFILE_CORY)
-    ssi_map = _bulk_top_scores(PROFILE_SSI)
 
     today = datetime.now()
     two_weeks_ago = (today - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -82,20 +104,27 @@ def get_dashboard_summary():
         if c_date and c_date < sixty_days_ago:
             continue
 
-        cory_scores = cory_map.get(sol["id"], [])
-        ssi_scores = ssi_map.get(sol["id"], [])
-        cory_best = max((s["score"] for s in cory_scores), default=0)
-        ssi_best = max((s["score"] for s in ssi_scores), default=0)
-        best = max(cory_best, ssi_best)
+        # Build per-profile score lists and find overall best
+        sol_profiles = []
+        best = 0.0
+        for pid, pdata in profile_score_maps.items():
+            scores = [s for s in pdata["map"].get(sol["id"], []) if s["score"] > 0]
+            top = max((s["score"] for s in scores), default=0.0)
+            if top > 0:
+                sol_profiles.append({
+                    "profile_id": pid,
+                    "profile_name": pdata["name"],
+                    "scores": scores,
+                    "top": top,
+                })
+            best = max(best, top)
 
         if best < MIN_SCORE:
             continue
 
-        sol["cory_scores"] = [s for s in cory_scores if s["score"] > 0]
-        sol["ssi_scores"] = [s for s in ssi_scores if s["score"] > 0]
-        sol["cory_top"] = cory_best
-        sol["ssi_top"] = ssi_best
+        sol["profile_scores"] = sol_profiles
         sol["score_color"] = _score_color(best)
+        sol["best_score"] = best
 
         is_closed = bool(c_date and c_date < today_str)
         is_open = not is_closed and (not o_date or o_date <= today_str)
@@ -119,10 +148,7 @@ def get_dashboard_summary():
                 closing_soon.append(sol)
 
     def by_score(lst):
-        scored = sorted(lst, key=lambda s: max(s.get("cory_top", 0), s.get("ssi_top", 0)), reverse=True)
-        return scored[:MAX_PER_SECTION]
-
-    schedules = get_agency_schedules()
+        return sorted(lst, key=lambda s: s.get("best_score", 0), reverse=True)[:MAX_PER_SECTION]
 
     return {
         "tpoc_window": by_score(tpoc_window),
@@ -130,5 +156,6 @@ def get_dashboard_summary():
         "open_now": by_score(open_now),
         "closing_soon": by_score(closing_soon),
         "recently_closed": by_score(recently_closed),
-        "coming_soon": schedules,
+        "coming_soon": get_agency_schedules(),
+        "profiles": [{"id": p["id"], "name": p["name"]} for p in profiles],
     }

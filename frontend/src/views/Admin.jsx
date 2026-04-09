@@ -6,6 +6,7 @@ import {
   triggerSamCsvImport, getSamCsvImportStatus,
   runAlignment, getAlignStatus, getProfiles,
 } from '../api/client'
+import api from '../api/client'
 
 const SCRAPERS = [
   {
@@ -348,6 +349,40 @@ function AlignmentCard() {
 }
 
 
+function SchedulerCard() {
+  const [info, setInfo] = useState(null)
+
+  useEffect(() => {
+    api.get('/config').then(r => setInfo(r.data.scheduler)).catch(() => {})
+  }, [])
+
+  if (!info) return null
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+      <div className="flex items-start justify-between mb-1">
+        <h3 className="font-semibold text-gray-900">Nightly Alignment</h3>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+          info.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {info.enabled ? 'Scheduled' : 'Disabled'}
+        </span>
+      </div>
+      {info.enabled ? (
+        <p className="text-xs text-gray-500">
+          Runs nightly at {String(info.hour).padStart(2,'0')}:{String(info.minute).padStart(2,'0')} server time.
+          {info.next_run && <> Next run: {new Date(info.next_run).toLocaleString()}.</>}
+          {' '}Skips already-scored pairs. Set <span className="font-mono">SCHEDULER_ENABLED=false</span> in .env to disable.
+        </p>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Set <span className="font-mono">SCHEDULER_ENABLED=true</span> in .env to enable.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function Admin() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -369,8 +404,9 @@ export default function Admin() {
       </div>
 
       <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Scoring</h2>
-      <div className="max-w-xl">
+      <div className="max-w-xl space-y-4">
         <AlignmentCard />
+        <SchedulerCard />
       </div>
     </div>
   )

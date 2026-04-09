@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getDashboard } from '../api/client'
+import { getDashboard, getProfiles, createProfile } from '../api/client'
 
 const SCORE_RING = {
   green:  'border-green-400 bg-green-50',
@@ -14,29 +14,128 @@ const SCORE_BADGE_CLS = (score) => {
   return 'bg-gray-100 text-gray-500'
 }
 
+// ---------------------------------------------------------------------------
+// First-login profile setup prompt
+// ---------------------------------------------------------------------------
+function ProfileSetup({ onDone }) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const navigate = useNavigate()
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Please enter a profile name.'); return }
+    setSaving(true)
+    setError('')
+    try {
+      await createProfile({ name: name.trim() })
+      onDone()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create profile.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 w-full max-w-md">
+        <h1 className="text-xl font-bold text-gray-900 mb-1">Welcome to ProposalPilot</h1>
+        <p className="text-sm text-gray-500 mb-6">
+          Create a personal profile to get solicitations scored against your research interests.
+          You can add capabilities and keywords after setup.
+        </p>
+
+        <form onSubmit={handleCreate} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Your name or profile label
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Raphael Panfili"
+              autoFocus
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full py-2 bg-blue-700 text-white text-sm font-medium rounded hover:bg-blue-800 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Creating...' : 'Create Profile'}
+          </button>
+        </form>
+
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-3 font-medium">What happens next:</p>
+          <ol className="text-xs text-gray-500 space-y-1.5 list-decimal list-inside">
+            <li>Go to <strong>Capabilities</strong> → <strong>Generate from Profile</strong></li>
+            <li>Paste your ORCID URL or upload your CV</li>
+            <li>Review and save the suggested capability areas</li>
+            <li>Click <strong>Score My Profile</strong> to rank solicitations against your expertise</li>
+          </ol>
+        </div>
+
+        <button
+          onClick={() => navigate('/capabilities/generate')}
+          className="mt-4 w-full py-2 text-sm text-blue-700 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+        >
+          Skip — go to Capability Generation
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [data, setData] = useState({
-    tpoc_window: [], newly_released: [], open_now: [],
-    closing_soon: [], recently_closed: [], coming_soon: [],
-  })
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [needsProfile, setNeedsProfile] = useState(false)
 
-  useEffect(() => {
-    getDashboard()
-      .then(setData)
+  const load = () => {
+    setLoading(true)
+    Promise.all([getDashboard(), getProfiles()])
+      .then(([dash, profiles]) => {
+        // Non-shared owned profiles only
+        const ownedProfiles = profiles.filter(p => !p.shared)
+        if (ownedProfiles.length === 0) {
+          setNeedsProfile(true)
+        } else {
+          setData(dash)
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }
 
-  if (loading) return <div className="p-8 text-center text-gray-400">Loading Dashboard...</div>
+  useEffect(() => { load() }, [])
 
-  const ScoreRow = ({ label, scores }) => {
+  if (loading) return <div className="p-8 text-center text-gray-400">Loading...</div>
+
+  if (needsProfile) {
+    return <ProfileSetup onDone={() => { setNeedsProfile(false); load() }} />
+  }
+
+  const ScoreRow = ({ profileName, scores }) => {
     const visible = (scores || []).filter(s => s.score > 0)
     if (!visible.length) return null
+    // Shorten label to first name / first word
+    const label = profileName.split(' ')[0]
     return (
       <div className="flex flex-wrap items-start gap-1">
-        <span className="text-xs text-gray-400 w-8 shrink-0 pt-0.5">{label}</span>
+        <span className="text-xs text-gray-400 shrink-0 pt-0.5 w-14 truncate" title={profileName}>
+          {label}
+        </span>
         <div className="flex flex-wrap gap-1">
           {visible.map((s, i) => (
             <span
@@ -54,7 +153,7 @@ export default function Dashboard() {
 
   const SolCard = ({ item }) => {
     const ringCls = SCORE_RING[item.score_color] || SCORE_RING.gray
-    const hasScores = (item.cory_scores?.length > 0) || (item.ssi_scores?.length > 0)
+    const hasScores = (item.profile_scores || []).length > 0
 
     return (
       <div
@@ -74,8 +173,13 @@ export default function Dashboard() {
 
         {hasScores && (
           <div className="flex flex-col gap-1.5 mb-3">
-            <ScoreRow label="Cory" scores={item.cory_scores} />
-            <ScoreRow label="SSI" scores={item.ssi_scores} />
+            {item.profile_scores.map(ps => (
+              <ScoreRow
+                key={ps.profile_id}
+                profileName={ps.profile_name}
+                scores={ps.scores}
+              />
+            ))}
           </div>
         )}
 
@@ -93,7 +197,6 @@ export default function Dashboard() {
 
   const Section = ({ title, items, isSchedule = false, icon, colorClass }) => {
     if (!items || items.length === 0) return null
-
     return (
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-4">
@@ -144,16 +247,16 @@ export default function Dashboard() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Agency Release Calendar</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Opportunities sorted by alignment strength for the active profile
+          Opportunities sorted by alignment strength for your profiles
         </p>
       </div>
 
-      <Section title="Action Required: TPOC Window Active" items={data.tpoc_window}   icon="🚨" colorClass="text-red-600" />
-      <Section title="Closing Soon (< 30 days)"             items={data.closing_soon}  icon="⏳" colorClass="text-orange-500" />
-      <Section title="Open Now"                             items={data.open_now}      icon="🟢" colorClass="text-green-500" />
-      <Section title="Newly Released (last 14 days)"        items={data.newly_released} icon="⭐" colorClass="text-yellow-500" />
-      <Section title="Coming Soon (Expected Cycles)"        items={data.coming_soon}   icon="📅" colorClass="text-blue-500" isSchedule={true} />
-      <Section title="Recently Closed"                      items={data.recently_closed} icon="🔒" colorClass="text-gray-400" />
+      <Section title="Action Required: TPOC Window Active" items={data.tpoc_window}    icon="🚨" colorClass="text-red-600" />
+      <Section title="Closing Soon (< 30 days)"            items={data.closing_soon}   icon="⏳" colorClass="text-orange-500" />
+      <Section title="Open Now"                            items={data.open_now}       icon="🟢" colorClass="text-green-500" />
+      <Section title="Newly Released (last 14 days)"       items={data.newly_released} icon="⭐" colorClass="text-yellow-500" />
+      <Section title="Coming Soon (Expected Cycles)"       items={data.coming_soon}    icon="📅" colorClass="text-blue-500" isSchedule={true} />
+      <Section title="Recently Closed"                     items={data.recently_closed} icon="🔒" colorClass="text-gray-400" />
     </div>
   )
 }

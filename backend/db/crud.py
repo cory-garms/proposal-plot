@@ -1,6 +1,13 @@
+import hashlib
 import sqlite3
 from typing import Optional
 from backend.database import get_connection
+
+
+def _content_hash(data: dict) -> str:
+    """SHA-256 of title + description — used to detect unchanged solicitations."""
+    text = (data.get("title") or "") + (data.get("description") or "")
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -9,9 +16,10 @@ from backend.database import get_connection
 
 def upsert_solicitation(data: dict) -> int:
     """Insert or update a solicitation by URL. Returns the row id."""
+    data = {**data, "content_hash": _content_hash(data)}
     sql = """
-        INSERT INTO solicitations (agency, title, topic_number, description, deadline, open_date, close_date, release_date, vehicle_type, branch, tpoc_json, url, raw_html, source)
-        VALUES (:agency, :title, :topic_number, :description, :deadline, :open_date, :close_date, :release_date, :vehicle_type, :branch, :tpoc_json, :url, :raw_html, :source)
+        INSERT INTO solicitations (agency, title, topic_number, description, deadline, open_date, close_date, release_date, vehicle_type, branch, tpoc_json, url, raw_html, source, content_hash)
+        VALUES (:agency, :title, :topic_number, :description, :deadline, :open_date, :close_date, :release_date, :vehicle_type, :branch, :tpoc_json, :url, :raw_html, :source, :content_hash)
         ON CONFLICT(url) DO UPDATE SET
             agency       = excluded.agency,
             title        = excluded.title,
@@ -26,11 +34,14 @@ def upsert_solicitation(data: dict) -> int:
             tpoc_json    = excluded.tpoc_json,
             raw_html     = excluded.raw_html,
             source       = excluded.source,
+            content_hash = excluded.content_hash,
             scraped_at   = datetime('now')
     """
     with get_connection() as conn:
         cur = conn.execute(sql, data)
         return cur.lastrowid
+
+
 
 
 def get_all_solicitations(
@@ -110,24 +121,48 @@ def set_solicitation_watched(solicitation_id: int, watched: bool) -> None:
 # Profiles
 # ---------------------------------------------------------------------------
 
-def get_all_profiles(user_id: Optional[int] = None) -> list[dict]:
-    sql = "SELECT * FROM profiles"
-    params = []
-    if user_id is not None:
-        sql += " WHERE user_id = ?"
-        params.append(user_id)
-    sql += " ORDER BY name"
+def get_all_profiles(user_id: Optional[int] = None, include_all: bool = False) -> list[dict]:
+    """
+    Return profiles visible to the given user:
+      - include_all=True (admin): all profiles
+      - user_id set: own profiles + shared profiles
+      - user_id=None (unauthenticated): shared profiles only
+    """
+    if include_all:
+        sql = "SELECT * FROM profiles ORDER BY name"
+        params = []
+    elif user_id is not None:
+        sql = "SELECT * FROM profiles WHERE shared = 1 OR user_id = ? ORDER BY name"
+        params = [user_id]
+    else:
+        sql = "SELECT * FROM profiles WHERE shared = 1 ORDER BY name"
+        params = []
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
-def insert_profile(name: str, user_id: Optional[int] = None) -> int:
+
+def get_profile_by_id(profile_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def insert_profile(name: str, user_id: Optional[int] = None, shared: bool = False) -> int:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT OR IGNORE INTO profiles (name, user_id) VALUES (?, ?)",
-            (name, user_id),
+            "INSERT OR IGNORE INTO profiles (name, user_id, shared) VALUES (?, ?, ?)",
+            (name, user_id, 1 if shared else 0),
         )
         return cur.lastrowid
+
+
+def set_profile_shared(profile_id: int, shared: bool) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE profiles SET shared = ? WHERE id = ?",
+            (1 if shared else 0, profile_id),
+        )
 
 # ---------------------------------------------------------------------------
 # Capabilities
@@ -155,6 +190,8 @@ def update_capability(capability_id: int, name: str, description: str, keywords_
 
 def delete_capability(capability_id: int) -> None:
     with get_connection() as conn:
+        # Remove scores first to avoid FK constraint violation
+        conn.execute("DELETE FROM solicitation_capability_scores WHERE capability_id = ?", (capability_id,))
         conn.execute("DELETE FROM capabilities WHERE id = ?", (capability_id,))
 
 
@@ -172,25 +209,35 @@ def insert_capability(name: str, description: str, keywords_json: str, profile_i
 # ---------------------------------------------------------------------------
 
 def get_scored_pairs() -> set[tuple[int, int]]:
-    """Return set of (solicitation_id, capability_id) pairs that already have a non-zero score."""
+    """
+    Return (solicitation_id, capability_id) pairs that have a non-zero score
+    AND whose content hasn't changed since scoring (scored_hash matches current hash).
+    Pairs with changed or missing hashes are excluded so they get re-scored.
+    """
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT solicitation_id, capability_id FROM solicitation_capability_scores WHERE score > 0"
-        ).fetchall()
+        rows = conn.execute("""
+            SELECT sc.solicitation_id, sc.capability_id
+            FROM solicitation_capability_scores sc
+            JOIN solicitations s ON s.id = sc.solicitation_id
+            WHERE sc.score > 0
+              AND sc.scored_hash IS NOT NULL
+              AND sc.scored_hash = s.content_hash
+        """).fetchall()
     return {(r["solicitation_id"], r["capability_id"]) for r in rows}
 
 
-def upsert_score(solicitation_id: int, capability_id: int, score: float, rationale: str) -> None:
+def upsert_score(solicitation_id: int, capability_id: int, score: float, rationale: str, content_hash: str = "") -> None:
     sql = """
-        INSERT INTO solicitation_capability_scores (solicitation_id, capability_id, score, rationale)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO solicitation_capability_scores (solicitation_id, capability_id, score, rationale, scored_hash)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(solicitation_id, capability_id) DO UPDATE SET
-            score     = excluded.score,
-            rationale = excluded.rationale,
-            scored_at = datetime('now')
+            score       = excluded.score,
+            rationale   = excluded.rationale,
+            scored_hash = excluded.scored_hash,
+            scored_at   = datetime('now')
     """
     with get_connection() as conn:
-        conn.execute(sql, (solicitation_id, capability_id, score, rationale))
+        conn.execute(sql, (solicitation_id, capability_id, score, rationale, content_hash))
 
 
 def get_scores_for_solicitation(solicitation_id: int, profile_id: Optional[int] = None) -> list[dict]:

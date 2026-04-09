@@ -9,8 +9,7 @@ generate_draft(project_id, section_type):
   5. Persist to drafts table
   6. Return draft dict
 """
-import anthropic
-from backend.config import ANTHROPIC_API_KEY
+from backend.llm.factory import get_llm_client
 from backend.db.crud import (
     get_project_by_id,
     get_solicitation_by_id,
@@ -20,7 +19,6 @@ from backend.db.crud import (
 from backend.rag.context_builder import build_context
 from backend.rag.prompts import SECTION_PROMPTS, DRAFT_SYSTEM, build_settings_block
 
-MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
 
 VALID_SECTION_TYPES = set(SECTION_PROMPTS.keys())
@@ -59,25 +57,16 @@ def generate_draft(project_id: int, section_type: str, tone: str = "technical", 
         top_capability=top_cap,
     ) + build_settings_block(tone, focus_area)
 
-    # Call Claude
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=DRAFT_SYSTEM,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        content = response.content[0].text.strip()
-    except anthropic.APIError as e:
-        raise RuntimeError(f"Claude API error: {e}") from e
+    # Call LLM
+    llm = get_llm_client()
+    content = llm.complete(system=DRAFT_SYSTEM, user=user_prompt, max_tokens=MAX_TOKENS)
 
     # Persist
     draft_id = insert_draft(
         project_id=project_id,
         section_type=section_type,
         content=content,
-        model_version=MODEL,
+        model_version=llm.model,
     )
 
     # Return the full draft record

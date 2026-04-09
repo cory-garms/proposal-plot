@@ -15,10 +15,10 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      let token
+      let data
       if (mode === 'register') {
         const res = await api.post('/auth/register', { email, password })
-        token = res.data.access_token
+        data = res.data
       } else {
         // OAuth2 form requires application/x-www-form-urlencoded
         const form = new URLSearchParams()
@@ -27,9 +27,10 @@ export default function Login() {
         const res = await api.post('/auth/login', form, {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         })
-        token = res.data.access_token
+        data = res.data
       }
-      localStorage.setItem('token', token)
+      sessionStorage.setItem('token', data.access_token)
+      sessionStorage.setItem('is_admin', data.is_admin ? 'true' : 'false')
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.detail || 'Authentication failed')

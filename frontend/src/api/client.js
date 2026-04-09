@@ -7,7 +7,7 @@ const api = axios.create({
 
 // Attach JWT if present
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
@@ -17,7 +17,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 && window.location.pathname !== '/login') {
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
       window.location.href = '/login'
     }
     return Promise.reject(err)
@@ -45,8 +45,12 @@ export const triggerScrape = (params = {}) =>
 export const getScrapeStatus = () =>
   api.get('/solicitations/scrape/status').then(r => r.data)
 
-export const getDashboard = (profileId = '1') =>
-  api.get('/dashboard', { params: { profile_id: profileId } }).then(r => r.data)
+export const getDashboard = () => {
+  const isAdmin = sessionStorage.getItem('is_admin') === 'true'
+  const profileId = isAdmin ? localStorage.getItem('adminProfileId') : null
+  const params = profileId ? { profile_id: profileId } : {}
+  return api.get('/dashboard', { params }).then(r => r.data)
+}
 
 export const getProfiles = () =>
   api.get('/profiles').then(r => r.data)
@@ -119,5 +123,22 @@ export const toggleKeyword = (id, active) =>
 
 export const deleteKeyword = (id) =>
   api.delete(`/keywords/${id}`).then(r => r.data)
+
+export const changePassword = (currentPassword, newPassword) =>
+  api.patch('/auth/password', { current_password: currentPassword, new_password: newPassword }).then(r => r.data)
+
+export const getMe = () =>
+  api.get('/auth/me').then(r => r.data)
+
+export const generateCapabilitiesFromUrl = (url) =>
+  api.post('/capabilities/generate/url', { url }).then(r => r.data)
+
+export const generateCapabilitiesFromFile = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/capabilities/generate/file', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
 
 export default api

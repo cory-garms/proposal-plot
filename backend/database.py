@@ -13,7 +13,27 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """
+    Additive migrations for columns that didn't exist in earlier schema versions.
+    Each ALTER TABLE is wrapped in try/except because SQLite has no ADD COLUMN IF NOT EXISTS.
+    Safe to run on every startup — no-ops if columns already exist.
+    """
+    migrations = [
+        "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE profiles ADD COLUMN shared INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE solicitations ADD COLUMN content_hash TEXT",
+        "ALTER TABLE solicitation_capability_scores ADD COLUMN scored_hash TEXT",
+    ]
+    for sql in migrations:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+
 def init_db() -> None:
     schema = SCHEMA_PATH.read_text()
     with get_connection() as conn:
         conn.executescript(schema)
+        _migrate(conn)

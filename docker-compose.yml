@@ -1,0 +1,47 @@
+# ProposalPilot AI — local network deployment
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in values (at minimum: JWT_SECRET, LLM config)
+#   2. docker compose up --build
+#   3. Open http://<server-ip>:3000 — register your account on first visit
+#
+# The DB is persisted in ./proposalpilot.db on the host.
+# All API traffic flows: browser -> nginx (:3000) -> /api/* -> backend (:8000).
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    volumes:
+      # Persist the SQLite database on the host so data survives container restarts
+      - ./proposalpilot.db:/app/proposalpilot.db
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      # Beta testers access the app at http://<server-ip>:3000
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge

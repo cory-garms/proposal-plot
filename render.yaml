@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: proposalpilot-api
+    runtime: python
+    region: oregon
+    plan: starter          # $7/month — stays warm, required for persistent disk
+    rootDir: .
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+    disk:
+      name: proposalpilot-data
+      mountPath: /data
+      sizeGB: 1            # $0.25/GB/month (included in starter plan)
+
+    envVars:
+      # Database — stored on the persistent disk
+      - key: DB_PATH
+        value: /data/proposalpilot.db
+
+      # Auth — set a real secret in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true   # Render generates a random value on first deploy
+
+      # Registration: close after initial user setup
+      - key: ALLOW_REGISTRATION
+        value: "false"
+
+      # CORS — set to your GitHub Pages URL
+      - key: CORS_ORIGINS
+        value: https://cory-garms.github.io
+
+      # Scheduler — run nightly alignment at 2:00 AM UTC
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: SCHEDULER_HOUR
+        value: "2"
+      - key: SCHEDULER_MINUTE
+        value: "0"
+
+      # LLM — configure via Render dashboard secrets
+      # Option A: Anthropic
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_MODEL
+        value: claude-haiku-4-5-20251001   # cheapest model for scoring
+      - key: ANTHROPIC_API_KEY
+        sync: false   # set manually in Render dashboard
+
+      # Option B: OpenAI-compat (uncomment and fill in)
+      # - key: LLM_PROVIDER
+      #   value: openai_compat
+      # - key: LLM_MODEL
+      #   value: gpt-4o-mini
+      # - key: LLM_BASE_URL
+      #   value: https://api.openai.com/v1
+      # - key: LLM_API_KEY
+      #   sync: false

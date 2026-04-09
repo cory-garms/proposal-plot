@@ -142,6 +142,100 @@
 
 ---
 
+## 2026-04-08 - Sprint 7 (Claude)
+
+### Day 1: Own-Profile Alignment
+- `require_own_profile_or_admin` dependency in `auth.py`: admins can run for any/all profiles; non-admins must specify a `profile_id` they own
+- `POST /align/run` changed from `require_admin` → `require_own_profile_or_admin`
+- `Capabilities.jsx`: "Score My Profile" green button for non-admins; requires profile filter selection; polls `GET /align/status` and shows result inline
+
+### Day 2: Scheduled Nightly Alignment
+- `backend/scheduler.py`: APScheduler `BackgroundScheduler` with `CronTrigger`; default 02:00 server time
+- Config vars: `SCHEDULER_ENABLED`, `SCHEDULER_HOUR`, `SCHEDULER_MINUTE` in `.env`
+- Wired into FastAPI lifespan (`start_scheduler` / `stop_scheduler`)
+- `GET /config` now includes `scheduler` block with enabled state and next run time
+- `Admin.jsx`: `SchedulerCard` component shows schedule status and next run time
+- `apscheduler==3.10.4` added to requirements
+
+### Day 3: Capability Extraction Pipeline
+- `backend/rag/extractor.py`: three extraction paths:
+  - `extract_from_orcid(url_or_id)` — hits ORCID public API JSON, extracts name/bio/employment/publications; strips residual XML tags from titles
+  - `extract_from_url(url)` — httpx + BeautifulSoup; auto-routes ORCID HTML URLs to API handler
+  - `extract_from_pdf(bytes)` — pymupdf (fitz); handles most CVs cleanly
+  - `extract_from_docx(bytes)` — python-docx; all truncated at 12k chars for LLM context
+- `backend/rag/capability_generator.py`: LLM prompt returning JSON array of `{name, description, keywords}`; strips markdown fences; validates structure
+- `backend/routers/generate_capabilities.py`: `POST /capabilities/generate/url`, `POST /capabilities/generate/file` (multipart); both require auth; 10 MB file limit
+- `pymupdf>=1.24.0` added to requirements
+
+**ORCID test (rpanfili — 0000-0002-1605-0331):**
+- Extraction: clean, 20 publications, employment at Spectral Sciences confirmed
+- Two research phases visible: atmospheric/IR modeling (2002–present, primary), atomic/laser physics (pre-2002, background)
+
+### Day 4: Capability Generation UI
+- `frontend/src/views/GenerateCapabilities.jsx`: three-step wizard (Input → Review & Edit → Done)
+  - Step 1: URL/ORCID tab or file upload tab
+  - Step 2: editable capability cards (name, description, keywords); per-capability include/exclude checkbox; profile selector
+  - Step 3: success state with links to Capabilities page or generate more
+- `Capabilities.jsx`: "Generate from Profile" purple button links to `/capabilities/generate`
+- `App.jsx`: `/capabilities/generate` route added
+- `client.js`: `generateCapabilitiesFromUrl`, `generateCapabilitiesFromFile`
+
+### Day 5: Testing and Polish
+- Verified ORCID extraction produces clean text after adding `_strip_xml_tags()` to handle `<emph>` in publication titles
+- All new Python files pass `ast.parse()` syntax check
+- `apscheduler` and `pymupdf` installed into `.ppEnv`
+
+---
+
+## 2026-04-08 - Sprint 6 (Claude)
+
+### Day 3: LLM Abstraction Layer
+
+**Goal:** decouple all LLM calls from the Anthropic SDK so any commercial or local model can be swapped in without code changes.
+
+**New files:**
+- `backend/llm/__init__.py` — package marker
+- `backend/llm/base.py` — `LLMClient` Protocol: `complete(system, user, max_tokens) -> str` + `model` attribute
+- `backend/llm/anthropic_provider.py` — wraps `anthropic` SDK; used when `LLM_PROVIDER=anthropic`
+- `backend/llm/openai_compat_provider.py` — wraps `openai` SDK with configurable `base_url`; covers OpenAI, Gemini, Kimi K2, GLM, Ollama, LM Studio, vLLM, HuggingFace TGI
+- `backend/llm/factory.py` — `get_llm_client()` cached singleton factory; `reset_llm_client()` for test teardown
+
+**Modified:**
+- `backend/config.py` — added `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`; kept `ANTHROPIC_API_KEY` for backward compat
+- `backend/requirements.txt` — added `openai>=1.30.0`
+- `backend/rag/generator.py` — removed direct `anthropic` import; now calls `get_llm_client().complete()`; `model_version` written to DB comes from `llm.model`
+- `backend/capabilities/aligner.py` — removed `anthropic` import and `MODEL` constant; `semantic_score()` now typed to `LLMClient`; `run_alignment()` calls `get_llm_client()`
+- `backend/main.py` — added `_validate_config()` startup check (warns on default JWT_SECRET, missing API keys, misconfigured provider); added `GET /config` endpoint (returns provider/model info to frontend, never secrets)
+
+### Day 4: Docker Packaging
+
+**Goal:** single `docker compose up --build` deploys the full stack on any machine; works on any host IP without rebuilding.
+
+**Architecture:** browser → nginx (port 3000) → `/api/*` proxied to backend (internal port 8000) → SQLite volume
+
+**New files:**
+- `Dockerfile` — backend; python:3.12-slim; copies `backend/` only; DB mounted as volume
+- `frontend/Dockerfile` — two-stage: Node 20 Alpine builds with `VITE_API_BASE_URL=/api`; nginx:alpine serves dist
+- `frontend/nginx.conf` — proxies `/api/` → `http://backend:8000/`; SPA fallback; 300s timeout for long-running jobs
+- `docker-compose.yml` — backend + frontend services; shared `internal` bridge network; DB volume mount; healthcheck on `/health`
+- `.env.example` — documents all options for Anthropic, OpenAI, Gemini, Kimi K2, GLM, Ollama, LM Studio, vLLM
+- `.dockerignore` — excludes .env, db files, venv, node_modules, dist from build context
+
+**Key design decision:** frontend always built with `VITE_API_BASE_URL=/api` in Docker; nginx handles the host-to-backend translation. This means the image is host-IP-agnostic.
+
+### Day 5: First-Run Onboarding
+
+**New files:**
+- `setup.sh` — local dev setup: creates .env, generates JWT_SECRET if default, creates venv, installs deps, inits DB, seeds capabilities if empty, installs frontend deps
+- `BETA_SETUP.md` — step-by-step Docker deployment guide for non-technical beta users; covers LLM provider selection, network access, data persistence, troubleshooting
+
+### Notes
+- Days 1 and 2 (Admin UI + Profile/User Scoping) were already complete from Sprint 5 and required no changes.
+- `openai` package is always installed regardless of provider; it's small and avoids conditional install complexity.
+- Anthropic SDK is still installed even when using `openai_compat`; kept for future use and because it's already pinned.
+
+---
+
 ## 2026-04-02 - Sprint 5 (Claude)
 
 ### Day 1: SOTA Caching + Draft Revision History UI
@@ -183,3 +277,78 @@
 - `sota_cache` table present and empty (will populate on first draft generation)
 
 ---
+
+---
+
+## 2026-04-09 - Sprint 8 (Claude)
+
+### Bug Fixes
+
+**Capability delete broken (FK constraint)**
+- `delete_capability()` in `crud.py` was failing silently due to FK violation: `solicitation_capability_scores` references `capability_id` with no CASCADE.
+- Fix: delete matching rows from `solicitation_capability_scores` before deleting the capability.
+
+**Admin profile dropdown missing non-admin users**
+- `GET /profiles` called `get_all_profiles(user_id=user["id"])` for admins, returning only own + shared profiles.
+- Fix: `get_all_profiles()` gains `include_all=True` param; admin path calls it with that flag, returning all profiles across all users.
+
+**Non-admin "Score My Profile" button state**
+- Score button was only gated on `profileFilter === 'all'`; if SSI (shared) was selected, the request would 403 at the backend.
+- Fix: button also checks `!sel.shared`; disabled with correct tooltip when a shared profile is selected.
+
+**Profile heading showed "PANFILIO" (trailing zero)**
+- `profile.shared` is stored as `0`/`1` (SQLite integer). `{profile.shared && <span>...</span>}` in React renders `0` as literal text after the profile name.
+- Fix: changed to `{!!profile.shared && ...}` to coerce to boolean.
+
+### Capability Generator Improvements
+
+**Broader capability categories**
+- AI prompt updated in `capability_generator.py`: prefer broad domain names over project-specific titles; keywords now must include parent domain terms alongside specific ones (e.g., both "hyperspectral imaging" AND "remote sensing").
+- Reduces over-specificity that was causing low keyword hit rates against solicitations.
+
+**ResearchGate + Google Scholar support**
+- `extractor.py`: dedicated `_extract_google_scholar()` and `_extract_researchgate()` functions added.
+- Google Scholar: extracts name, research interests, publication list from HTML.
+- ResearchGate: scrapes page HTML; returns helpful fallback message when Cloudflare blocks access.
+- `extract_from_url()` now auto-routes based on hostname before falling back to generic scrape.
+
+### Dev Tooling
+
+**Beta user reset script**
+- `backend/scraper/reset_beta_users.py`: deletes all non-admin users and their personal profiles/capabilities (cascades scores), then recreates rpanfili, dstelter, rtaylor with temp password `Welcome!2026`.
+- Run: `python -m backend.scraper.reset_beta_users`
+
+### Deployment Infrastructure (Sprint 8)
+
+**Content-hash deduplication**
+- `solicitations.content_hash` column: SHA-256 of `title + description`, computed on every `upsert_solicitation()`.
+- `solicitation_capability_scores.scored_hash` column: stores the hash at scoring time.
+- `get_scored_pairs()` now only skips a pair when `scored_hash == current content_hash` — changed/new content automatically triggers re-scoring on next alignment run.
+- DB migrations added for both columns in `database.py`.
+
+**CORS lockdown**
+- `CORS_ORIGINS` env var added to `config.py`; defaults to `*` for local dev.
+- `main.py` reads from config instead of hardcoded `*`.
+- Set to `https://cgarms.github.io` in `render.yaml` for production.
+
+**GitHub Actions CI/CD**
+- `.github/workflows/deploy-frontend.yml`: triggers on push to `main` when `frontend/` changes; builds with `VITE_API_BASE_URL` and `VITE_BASE_PATH` from repo secrets/variables; deploys to GitHub Pages via `actions/deploy-pages`.
+
+**GitHub Pages SPA routing**
+- `frontend/public/404.html`: GitHub Pages 404 redirect trick — converts path to `?p=` query param.
+- `frontend/index.html`: inline script restores the path via `history.replaceState` before React Router mounts.
+- `frontend/vite.config.js`: `base` set from `VITE_BASE_PATH` env var (default `/`).
+
+**Render deployment manifest**
+- `render.yaml`: defines web service + 1 GB persistent disk mounted at `/data`; `DB_PATH=/data/proposalpilot.db`; `JWT_SECRET` auto-generated by Render; `ALLOW_REGISTRATION=false` for production; nightly scheduler enabled.
+
+### DB State at Sprint End
+| Table | Count |
+|-------|-------|
+| solicitations | 824 |
+| scored pairs | 324 |
+| capabilities | 39 (across 5 profiles) |
+| profiles | 5 (Cory Garms, Spectral Sciences, Panfili, David Stelter, Ramona Taylor) |
+| users | 4 (cgarms admin + 3 betas) |
+| active keywords | 776 |
+

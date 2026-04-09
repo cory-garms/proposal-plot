@@ -11,8 +11,8 @@ Pass 2 - Claude API semantic scoring (only if keyword_score > KEYWORD_THRESHOLD)
 """
 import json
 import re
-import anthropic
-from backend.config import ANTHROPIC_API_KEY
+from backend.llm.factory import get_llm_client
+from backend.llm.base import LLMClient
 from backend.db.crud import (
     get_all_solicitations,
     get_all_capabilities,
@@ -22,8 +22,7 @@ from backend.db.crud import (
 )
 from backend.capabilities.prompts import ALIGNMENT_SYSTEM, ALIGNMENT_USER
 
-KEYWORD_THRESHOLD = 0.05  # min keyword score to trigger Claude API call (~2 keyword hits)
-MODEL = "claude-sonnet-4-6"
+KEYWORD_THRESHOLD = 0.05  # min keyword score to trigger LLM API call (~2 keyword hits)
 MAX_DESC_CHARS = 3000       # truncate long descriptions to control token cost
 
 
@@ -47,14 +46,14 @@ def keyword_score(text: str, keywords: list[str]) -> float:
 
 
 def semantic_score(
-    client: anthropic.Anthropic,
+    client: LLMClient,
     solicitation: dict,
     capability: dict,
 ) -> tuple[float, str]:
     """
-    Call Claude API to get a semantic alignment score and rationale.
+    Call the configured LLM to get a semantic alignment score and rationale.
     Returns (score: float, rationale: str).
-    Falls back to (0.0, 'API error') on failure.
+    Falls back to (0.0, 'scoring error: ...') on failure.
     """
     description = (solicitation.get("description") or "")[:MAX_DESC_CHARS]
     prompt = ALIGNMENT_USER.format(
@@ -65,13 +64,7 @@ def semantic_score(
         description=description,
     )
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=256,
-            system=ALIGNMENT_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
+        raw = client.complete(system=ALIGNMENT_SYSTEM, user=prompt, max_tokens=256)
         data = json.loads(raw)
         score = float(data["score"])
         rationale = str(data["rationale"])
@@ -81,7 +74,7 @@ def semantic_score(
 
 
 def score_solicitation(
-    client: anthropic.Anthropic,
+    client: LLMClient,
     solicitation: dict,
     capabilities: list[dict],
     force_api: bool = False,
@@ -105,7 +98,7 @@ def score_solicitation(
             rationale = f"keyword score {kw_score:.3f} below threshold - no API call"
             api_used = False
 
-        upsert_score(solicitation["id"], cap["id"], score, rationale)
+        upsert_score(solicitation["id"], cap["id"], score, rationale, solicitation.get("content_hash") or "")
         results.append({
             "capability_id": cap["id"],
             "capability": cap["name"],
@@ -131,7 +124,7 @@ def run_alignment(
     has a non-zero Claude score. New solicitations and new capabilities are always scored.
     Overridden by force_api=True, which rescores everything unconditionally.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = get_llm_client()
     capabilities = get_all_capabilities(profile_id=profile_id)
     if not capabilities:
         return {"error": "No capabilities seeded. Run seed_capabilities.py first."}

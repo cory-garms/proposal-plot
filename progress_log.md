@@ -396,3 +396,37 @@
 | users | 4 |
 | active keywords | 776 |
 
+---
+
+## 2026-04-10 - Sprint 10 Day 1: Beta Prep + Bug Fixes (Claude)
+
+### DB Recovery
+- Original `/data/proposalpilot.db` on Render disk became corrupted during failed SCP attempts (service was restarting mid-transfer)
+- Recovery process: local `sqlite3 .dump | sqlite3` rebuild produces clean file; `DB_PATH` changed to `/data/proposalpilot2.db` in Render env vars
+- Safe upload procedure going forward: always dump-and-rebuild locally, then SCP the clean file
+
+### Deployment Fixes
+- `anthropic==0.34.2` pin restored — version range `>=0.25,<0.28` caused Render build timeouts (PyPI resolution issue on their build environment)
+- `init_db()` moved to `asyncio.create_task` so health check is never blocked by DB initialization (reverted after rollback issues; stable commit is `c1a546a`)
+- Sign out button now uses `useNavigate('/login')` instead of `window.location.href` — React Router respects `basename` automatically
+
+### Features
+- **Generate Outline** — prompt rewritten to produce structured bullet outlines (writing guides) instead of full draft prose; `max_tokens` reduced 4096 → 1500; UI labels updated
+- **Keywords tab** — hidden from non-admin users
+- **Keyword cleanup** — 5 keywords with leading apostrophe fixed in DB: 3 deleted (dupes of clean versions), 2 updated
+
+### Bug Fixes (found during Jim Grassi pre-beta session)
+- **Capabilities profile dropdown** — now defaults to user's own profile on load instead of "All profiles"
+- **Add capability form** — `profile_id` was hardcoded to `1` (Cory's profile); now initializes from active dropdown selection
+- **Solicitation detail wrong profile** — `getAlignment` was falling back to `profileId=1` for all non-admin users; now fetches user's own profile dynamically
+- **Dashboard empty for new users** — backend now falls back to SSI shared profile for sort/display when user has no personal scores; once they score their own capabilities, both appear
+
+### Users (production DB as of session end)
+| Email | Role |
+|-------|------|
+| cgarms@spectral.com | admin |
+| rpanfili@spectral.com | user |
+| dstelter@spectral.com | user |
+| rtaylor@spectral.com | user |
+| jgrassi@spectral.com | user (pre-beta tester) |
+

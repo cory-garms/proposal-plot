@@ -1,63 +1,67 @@
 # HANDOFF
 
-**Last updated:** 2026-04-09 (Sprint 9 complete — Claude)
+**Last updated:** 2026-04-10 (Sprint 10 day 1 — Claude)
 
 ---
 
 ## Immediate Next Steps (Start Here)
 
-**Sprint 9 is complete. The app is live.**
+**App is live and beta-ready. Jim Grassi (jgrassi@spectral.com) completed a pre-beta test session — bugs found and fixed.**
 
 - Frontend: `https://cory-garms.github.io/proposal-pilot/`
 - Backend: Render `proposalpilot-api` (Oregon, Starter plan)
-- DB: uploaded from local (824 solicitations, 5 profiles, 4 users)
-- Beta user credentials in DB: `Welcome!2026` temp password for rpanfili, dstelter, rtaylor
+- DB path on Render: `/data/proposalpilot2.db` (changed from `.db` during corruption recovery — `DB_PATH` env var set in Render dashboard)
+- Users in DB: cgarms (admin), rpanfili, dstelter, rtaylor, jgrassi — all `Welcome!2026`
 
-**Sprint 10 goal: beta tester handoff by end of day 5.**
+**Sprint 10 remaining goal: send beta invites to rpanfili, dstelter, rtaylor next week.**
 
-### Sprint 10 Plan
+### Sprint 10 Plan (Remaining)
 
-**Day 1 — Smoke test the live app**
-- Login as cgarms, verify dashboard, solicitation list, capabilities, alignment
-- Login as each beta persona (use incognito) — confirm they see only their own profile + Spectral Sciences shared profile
-- Verify score button works, generate a draft end-to-end, export PDF/DOCX
-- Check Render logs for any errors during normal use
-
-**Day 2 — Fix bugs found in smoke test**
-- Triage anything broken; fix before inviting beta users
-
-**Day 3 — Scrape fresh solicitations on Render**
+**Day 2 — Scrape fresh solicitations on Render**
 - Trigger SAM scrape from Admin page (live Render backend, real API)
 - Run alignment for Spectral Sciences shared profile
 - Verify nightly scheduler is showing a next-run time in Admin
 
-**Day 4 — Beta onboarding prep**
-- Write the beta invite email (URL, temp password, 3-step quick-start)
-- Consider a one-page `BETA_GUIDE.md` or in-app tooltip if onboarding looks rough
+**Day 3 — Beta onboarding prep**
+- Write beta invite email (URL, temp password `Welcome!2026`, 3-step quick-start)
 
-**Day 5 — Send invites, monitor**
+**Day 4 — Send invites, monitor**
 - Email rpanfili@spectral.com, dstelter@spectral.com, rtaylor@spectral.com
 - Monitor Render logs for 401s, errors, slow queries
-- Be available to reset passwords if needed (`python -m backend.scraper.reset_beta_users` locally then re-upload, or use Render Shell to run it directly)
+- Password reset if needed: Render Shell → `python -m backend.scraper.reset_beta_users`
 
-### Known Issues to Address in Sprint 10
-- **Capability auto-score on edit** — `PATCH /capabilities/{id}` triggers background alignment but not verified end-to-end on production
-- **SAM CSV import** — `POST /solicitations/import/sam-csv` exists but untested; don't expose in beta
-- **Password reset flow** — no self-service; admin must use `reset_beta_users.py` or Render Shell
+### Known Issues / Deferred
+- **Capability auto-score on edit** — background alignment on `PATCH /capabilities/{id}` not verified end-to-end on production
+- **SAM CSV import** — exists but untested; do not expose in beta
+- **No self-service password reset** — admin resets via Render Shell
 
-### Render Operations Reference
+### Critical Render Ops Note
+**DB is at `/data/proposalpilot2.db`** — the original `/data/proposalpilot.db` is corrupted (failed SCP during a live restart). Do not use it. `DB_PATH` env var in Render dashboard is already set correctly.
+
 ```bash
-# SSH into Render (add your public key in Render Account Settings → SSH Keys first)
-ssh srv-d7buv6fkijhs73b1mkfg@ssh.oregon.render.com
+# SSH into Render
+ssh srv-d7buv6fkijhs73b1mkfg@ssh.oregon.render.com   # key: ~/.ssh/id_rsa_personal
 
-# Upload a new DB from WSL
-sqlite3 proposalpilot.db "PRAGMA wal_checkpoint(FULL);"
-scp -i ~/.ssh/id_rsa_personal proposalpilot.db \
-    srv-d7buv6fkijhs73b1mkfg@ssh.oregon.render.com:/data/proposalpilot.db
+# Safe DB upload (always checkpoint WAL first, upload to proposalpilot2.db)
+sqlite3 /home/cgarms/Sandbox/proposal_pilot/proposal-pilot/proposalpilot.db "PRAGMA wal_checkpoint(FULL);"
+sqlite3 /home/cgarms/Sandbox/proposal_pilot/proposal-pilot/proposalpilot.db ".dump" | sqlite3 /tmp/proposalpilot_clean.db
+scp -i ~/.ssh/id_rsa_personal /tmp/proposalpilot_clean.db \
+    srv-d7buv6fkijhs73b1mkfg@ssh.oregon.render.com:/data/proposalpilot2.db
 # Then restart service in Render dashboard
 
 # Reset beta users via Render Shell tab
 python -m backend.scraper.reset_beta_users
+
+# Create a new user via Render Shell
+python3 -c "
+from backend.database import get_connection
+from passlib.context import CryptContext
+pwd = CryptContext(schemes=['bcrypt'], deprecated='auto')
+conn = get_connection()
+conn.execute('INSERT OR IGNORE INTO users (email, hashed_password, is_admin) VALUES (?, ?, 0)',
+             ('email@spectral.com', pwd.hash('Welcome!2026')))
+conn.commit()
+"
 ```
 
 ---

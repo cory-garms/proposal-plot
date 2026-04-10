@@ -4,84 +4,71 @@ Prompt templates for draft generation.
 
 DRAFT_SYSTEM = """\
 You are a Senior Proposal Writer specializing in SBIR/STTR Phase I technical proposals for \
-the US Department of Defense and other federal agencies. You write with precision, technical \
-credibility, and clear alignment to the solicitation's stated objectives.
+the US Department of Defense and other federal agencies. You produce concise, technically \
+credible proposal outlines that a PI can use as a writing guide.
 
-Your drafts follow standard government proposal structure, use active voice, and make the \
-technical innovation and feasibility case explicitly. Never use filler phrases like \
-"leveraging cutting-edge" or "state-of-the-art" without specific technical backing.
+Each outline section must contain:
+- A one-sentence statement of purpose for that section
+- 3-6 bullet points identifying the specific content to include
+- Where capability alignment scores are high (>= 0.7), call out the explicit connection \
+between team expertise and the solicitation need
 
-When a RELEVANT PRIOR ART section is provided in the context, you MUST:
-- Cite at least 2 papers by author name and year (e.g., "Smith et al. (2023)") when making \
-technical claims in the Background and Innovation sections.
-- Use the prior art to establish the gap that this proposal addresses.
-- Do not fabricate citations. Only reference papers explicitly listed in the context.\
+Be specific and technical. No filler phrases. Bullets should be actionable writing prompts, \
+not generic headings.\
 """
 
 TECHNICAL_VOLUME_PROMPT = """\
-Using the solicitation and capability context below, draft a Phase I SBIR Technical Volume.
+Using the solicitation and capability context below, produce a structured outline for a \
+Phase I SBIR Technical Volume. This is a writing guide, not a full draft.
 
 {context}
 
 ---
 
-Write each section below. Be specific, technically grounded, and directly address the \
-solicitation's stated objectives and evaluation criteria. Where capability alignment scores \
-are high (>= 0.7), make explicit connections between our expertise and the solicitation need.
-
 ## 1. Background and Motivation
-(2-3 paragraphs: current state of the problem, why existing approaches are inadequate, \
-and why this solicitation's objective is technically significant)
+- [3-5 bullets: key problem statements, gaps in current approaches, why this solicitation matters]
 
 ## 2. Innovation and Technical Differentiation
-(2 paragraphs: what is technically novel about the proposed approach, \
-how it differs from prior art, why this team is positioned to succeed)
+- [3-4 bullets: what is novel, how it differs from prior art, team's unique positioning in {top_capability}]
 
 ## 3. Technical Approach
-(3-4 paragraphs: specific methods, algorithms, hardware, or workflows proposed for Phase I; \
-include concrete milestones and measurable success criteria)
+- [4-6 bullets: specific methods, algorithms, hardware, or workflows; each bullet = one subsection of the final draft]
 
 ## 4. Phase I Feasibility Argument
-(1-2 paragraphs: why the proposed work is achievable in a Phase I timeframe; \
-key risks and how they will be mitigated)
+- [3-4 bullets: why achievable in Phase I, key risks, mitigation strategies, measurable success criteria]
 
-## 5. Phase I Work Plan (Outline)
-(Bulleted list of 4-6 tasks with brief descriptions and rough month estimates)
+## 5. Phase I Work Plan
+- [4-6 tasks with rough month ranges, e.g. "Task 1 (M1-M3): ..."]
 
-## 6. Team Qualifications (Stub)
-(2-3 sentences: relevant domain expertise in {top_capability} and related areas; \
-placeholder for PI name and institutional affiliation)\
+## 6. Team Qualifications
+- [2-3 bullets: relevant expertise in {top_capability} and adjacent areas; flag where specific credentials or publications should be cited]\
 """
 
 COMMERCIALIZATION_PROMPT = """\
-Using the solicitation and capability context below, draft a Phase II Commercialization Plan.
+Using the solicitation and capability context below, produce a structured outline for a \
+Phase II Commercialization Plan. This is a writing guide, not a full draft.
 
 {context}
 
 ---
 
 ## 1. Commercial Problem and Market Opportunity
-(2 paragraphs: the civilian or dual-use market problem this technology solves; \
-size and growth of the addressable market)
+- [3-4 bullets: market problem, addressable market size, growth drivers]
 
 ## 2. Target Customers and Use Cases
-(Bulleted list of 3-5 specific customer segments with one-sentence use case each)
+- [3-5 bullets: one customer segment per bullet with specific use case]
 
 ## 3. Competitive Landscape
-(1-2 paragraphs: existing solutions and their limitations; \
-how this technology provides a defensible advantage)
+- [3-4 bullets: named competing solutions, their limitations, our differentiation]
 
 ## 4. Commercialization Pathway
-(Numbered steps from Phase II completion to product or licensing revenue; \
-include realistic timeline milestones)
+- [4-6 bullets: ordered steps from Phase II completion to revenue or transition]
 
 ## 5. Revenue Model
-(1 paragraph: how the company captures value — product sale, SaaS, licensing, \
-government contract follow-on, or combination)
+- [2-3 bullets: value capture mechanism, pricing model, expected Phase III contract or licensing path]
 
-## 6. Phase III and Follow-on Funding Strategy
-(1 paragraph: DoD program of record connection if applicable; \
-non-SBIR funding sources such as VC, strategic partners, or CRADA)\
+## 6. Phase III and Follow-on Funding
+- [2-3 bullets: DoD program of record connections, non-SBIR funding sources to pursue]\
 """
 
 SECTION_PROMPTS = {

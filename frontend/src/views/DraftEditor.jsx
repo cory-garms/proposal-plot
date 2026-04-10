@@ -203,7 +203,7 @@ export default function DraftEditor() {
         {/* Left sidebar: generate controls + draft list */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Generate Draft</h2>
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Generate Outline</h2>
             <label className="block text-xs text-gray-500 mb-1">Section type</label>
             <select
               value={sectionType}
@@ -239,7 +239,7 @@ export default function DraftEditor() {
               disabled={generating}
               className="w-full px-3 py-2 bg-blue-700 text-white text-sm font-medium rounded hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {generating ? 'Generating...' : 'Generate'}
+              {generating ? 'Generating...' : 'Generate Outline'}
             </button>
             {generating && (
               <p className="text-xs text-gray-400 mt-2 text-center">
@@ -253,7 +253,7 @@ export default function DraftEditor() {
 
           {drafts.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-              <h2 className="text-sm font-semibold text-gray-700 mb-2">Draft History</h2>
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">Outline History</h2>
               <div className="space-y-1">
                 {drafts.map(d => (
                   <button
@@ -389,7 +389,7 @@ export default function DraftEditor() {
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center h-64">
               <div className="text-center text-gray-400">
                 <p className="text-sm">No draft yet.</p>
-                <p className="text-xs mt-1">Select a section type and click Generate.</p>
+                <p className="text-xs mt-1">Select a section type and click Generate Outline.</p>
               </div>
             </div>
           )}

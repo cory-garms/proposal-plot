@@ -19,7 +19,7 @@ from backend.db.crud import (
 from backend.rag.context_builder import build_context
 from backend.rag.prompts import SECTION_PROMPTS, DRAFT_SYSTEM, build_settings_block
 
-MAX_TOKENS = 4096
+MAX_TOKENS = 1500
 
 VALID_SECTION_TYPES = set(SECTION_PROMPTS.keys())
 

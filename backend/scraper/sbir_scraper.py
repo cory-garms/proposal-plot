@@ -85,7 +85,7 @@ async def enrich_with_detail(
     return records
 
 
-async def run(max_pages: int = 3, enrich: bool = True, max_detail: int = 50) -> list[dict]:
+async def run(max_pages: int = 30, enrich: bool = True, max_detail: int = 150) -> list[dict]:
     """Full scrape pipeline: listings + optional detail enrichment."""
     print(f"[scraper] Starting scrape: max_pages={max_pages}, enrich={enrich}")
     records = await scrape_listings(max_pages)

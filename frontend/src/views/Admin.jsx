@@ -3,6 +3,7 @@ import {
   triggerScrape, getScrapeStatus,
   triggerGrantsScrape, getGrantsScrapeStatus,
   triggerSamScrape, getSamScrapeStatus,
+  triggerDodScrape, getDodScrapeStatus,
   triggerSamCsvImport, getSamCsvImportStatus,
   runAlignment, getAlignStatus, getProfiles,
 } from '../api/client'
@@ -10,9 +11,20 @@ import api from '../api/client'
 
 const SCRAPERS = [
   {
+    id: 'dod',
+    label: 'DOD SBIR/STTR',
+    description: 'Fetches all open topics from dodsbirsttr.mil JSON API. Includes full descriptions, objectives, and TPOC contacts.',
+    noMax: true,
+    trigger: () => triggerDodScrape(),
+    getStatus: getDodScrapeStatus,
+    statsLabel: (s) => s.last_stats
+      ? `${s.last_stats.persisted} persisted, ${s.last_stats.errors} errors`
+      : null,
+  },
+  {
     id: 'sbir',
-    label: 'SBIR / DOD',
-    description: 'Scrapes SBIR.gov and DOD portals using Playwright. Slower — fetches detail pages.',
+    label: 'SBIR.gov',
+    description: 'Scrapes SBIR.gov listing pages (non-DOD agencies only). Fetches detail pages for full descriptions.',
     defaultMax: 50,
     maxLabel: 'Max pages',
     trigger: (max) => triggerScrape({ max_pages: max }),
@@ -47,7 +59,7 @@ const SCRAPERS = [
 
 
 function ScraperCard({ config }) {
-  const [maxVal, setMaxVal] = useState(config.defaultMax)
+  const [maxVal, setMaxVal] = useState(config.defaultMax ?? 50)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState('')
   const pollRef = useRef(null)
@@ -96,15 +108,19 @@ function ScraperCard({ config }) {
       <p className="text-xs text-gray-500 mb-4">{config.description}</p>
 
       <div className="flex items-center gap-2 mb-3">
-        <label className="text-xs text-gray-500 whitespace-nowrap">{config.maxLabel}</label>
-        <input
-          type="number"
-          value={maxVal}
-          onChange={e => setMaxVal(Number(e.target.value))}
-          min={1}
-          disabled={running}
-          className="w-24 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-        />
+        {!config.noMax && (
+          <>
+            <label className="text-xs text-gray-500 whitespace-nowrap">{config.maxLabel}</label>
+            <input
+              type="number"
+              value={maxVal}
+              onChange={e => setMaxVal(Number(e.target.value))}
+              min={1}
+              disabled={running}
+              className="w-24 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            />
+          </>
+        )}
         <button
           onClick={handleRun}
           disabled={running}
@@ -394,7 +410,7 @@ export default function Admin() {
       </div>
 
       <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Scrapers</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
         {SCRAPERS.map(cfg => <ScraperCard key={cfg.id} config={cfg} />)}
       </div>
 

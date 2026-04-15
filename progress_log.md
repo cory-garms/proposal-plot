@@ -430,3 +430,55 @@
 | rtaylor@spectral.com | user |
 | jgrassi@spectral.com | user (pre-beta tester) |
 
+---
+
+## 2026-04-14 - Sprint 10 Day 2: DOD SBIR/STTR Scraper Wired Up (Claude)
+
+### Context
+DOD released new SBIR/STTR topics (DoW batch). `dod_scraper.py` already existed and hit the `dodsbirsttr.mil` JSON API, but was not exposed via the API or Admin UI.
+
+### Changes
+- `backend/routers/solicitations.py` - added `POST /solicitations/scrape/dod` + `GET /solicitations/scrape/dod/status`; DOD records upserted with `source="dod"`
+- `frontend/src/api/client.js` - added `triggerDodScrape`, `getDodScrapeStatus`
+- `frontend/src/views/Admin.jsx` - added DOD SBIR/STTR scraper card (first in grid, no max input — always fetches all open topics); fixed SBIR card label from "SBIR / DOD" to "SBIR.gov"; updated grid to 4-col
+
+### Data
+- 115 open DOD topics scraped and loaded into local dev DB (source="dod")
+- Topics include Army, Navy, Air Force, DARPA, Space Force, and other DOD components
+
+### Next
+- Push to GitHub → Render auto-deploy
+- Trigger DOD scrape from Admin page on live Render instance
+- Run alignment for Spectral Sciences shared profile against new topics
+
+---
+
+## 2026-04-15 - Sprint 10 Day 3: DB Cleanup, Bug Fixes, Solicitations Overhaul (Claude)
+
+### DB Purge Script
+- `backend/scraper/purge_solicitations.py` — 4-phase purge with dry-run mode
+  - Phase 1: expired unscored unwatched SAM (-1,696)
+  - Phase 2: SAM dedup by topic_number, keep best-scored copy (-3,454, -2,378 overlap with P4)
+  - Phase 3: old SBIR.gov dev data (-100)
+  - Phase 4: SAM records with all-zero scores, not watched (-7,039)
+  - Projected: 9,995 → 690 solicitations
+- Script not yet committed to live; run after scorer finishes
+
+### Bug Fixes
+- `frontend/src/views/SolicitationList.jsx` — `profileId` localStorage key mismatch fixed; was always reading `'1'` (Cory/SSI); now correctly resolves personal profile for admins and non-admins
+- `backend/routers/dashboard.py` — when admin views as another user, `get_all_profiles(user_id=admin_id)` was returning admin's own profile instead of the target user's; now uses `include_all=True` + filters to target profile + shared profiles only
+
+### Solicitations Page
+- Two alignment columns: Alignment (You) + Alignment (SSI) — both returned from backend in single query via `shared_profile_id` param
+- Three sort modes: Combined (You+SSI), You only, SSI only
+- DOD source filter added to dropdown; red badge for DOD source
+- Non-admin users no longer need "Viewing as" dropdown — personal vs company scores always shown
+
+### Dashboard
+- `by_score()` now sorts by `combined_score` (sum of top scores across all visible profiles) instead of `best_score` (max single score)
+
+### Scraper Improvements (prior sessions, uncommitted until now)
+- `grants_scraper.py`, `sam_csv_parser.py`, `run_scrape.py` — switched from `upsert_solicitation` to `insert_solicitation_if_new` to prevent re-scraping from clobbering existing scored records
+- `sam_csv_parser.py` — added expired record filtering at import time; raised default max_results to 10,000
+- `sbir_scraper.py` / `run_scrape.py` — raised default max_pages/max_detail
+

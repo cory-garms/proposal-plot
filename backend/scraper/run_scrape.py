@@ -16,8 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from backend.scraper.sbir_scraper import run as scrape
 from backend.scraper.dod_scraper import run_sync as scrape_dod_sync
-from backend.db.crud import upsert_solicitation
+from backend.db.crud import insert_solicitation_if_new
 from datetime import datetime
+
+# DOD is fully covered by dod_scraper (dodsbirsttr.mil JSON API with complete descriptions).
+# Skipping DOD records from the sbir.gov HTML pass avoids duplicate entries with different URLs.
+_SBIR_SKIP_AGENCIES = {"DOD", "Army", "Navy", "Air Force", "Space Force", "DARPA",
+                        "OSD", "MDA", "SOCOM", "CBD", "DTRA", "DMEA", "NGA", "NSA", "DIA"}
 
 def parse_date(d_str):
     if not d_str:
@@ -60,31 +65,38 @@ async def main(max_pages: int, enrich: bool, max_detail: int) -> None:
     sbir_records = await sbir_task
     dod_records = await dod_future
     
-    records = sbir_records + dod_records
+    # Filter DOD agency records out of sbir.gov results — dod_scraper covers them with better data
+    filtered_sbir = [r for r in sbir_records if r.get("agency", "").strip() not in _SBIR_SKIP_AGENCIES]
+    skipped_dod = len(sbir_records) - len(filtered_sbir)
+    if skipped_dod:
+        print(f"[sbir] Skipped {skipped_dod} DOD-agency records (covered by dod_scraper)")
 
-    new_count = 0
-    error_count = 0
+    records = filtered_sbir + dod_records
+
+    inserted_count = skipped_count = error_count = 0
     for record in records:
         db_rec = build_db_record(record)
         if not db_rec["title"] or not db_rec["url"]:
             continue
         try:
-            upsert_solicitation(db_rec)
-            new_count += 1
+            if insert_solicitation_if_new(db_rec):
+                inserted_count += 1
+            else:
+                skipped_count += 1
         except Exception as e:
-            print(f"[db] Error upserting {db_rec.get('url')}: {e}")
+            print(f"[db] Error inserting {db_rec.get('url')}: {e}")
             error_count += 1
 
-    print(f"\n[done] Persisted {new_count} solicitations ({error_count} errors)")
+    print(f"\n[done] Inserted {inserted_count} new, {skipped_count} already in db, {error_count} errors")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape SBIR.gov solicitations")
-    parser.add_argument("--max-pages", type=int, default=3,
-                        help="Number of listing pages to scrape (10 topics each)")
+    parser.add_argument("--max-pages", type=int, default=30,
+                        help="Number of listing pages to scrape (10 topics each); scraper stops early if a page is empty")
     parser.add_argument("--no-enrich", action="store_true",
                         help="Skip detail page fetching")
-    parser.add_argument("--max-detail", type=int, default=50,
+    parser.add_argument("--max-detail", type=int, default=150,
                         help="Max number of detail pages to fetch per run")
     args = parser.parse_args()
 

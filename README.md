@@ -91,7 +91,7 @@ Also supports: Gemini, Kimi K2, GLM, LM Studio, vLLM, HuggingFace TGI.
 
 ## Features
 
-- **Multi-source scraping**: SBIR.gov, Grants.gov, SAM.gov, DOD CSV import
+- **Multi-source scraping**: DOD SBIR/STTR (dodsbirsttr.mil), SBIR.gov, Grants.gov, SAM.gov, SAM CSV bulk import
 - **Two-pass alignment**: keyword pre-filter gates LLM semantic scoring; content-hash dedup skips unchanged solicitations
 - **Capability profiles**: per-user profiles; shared company profile (Spectral Sciences); auto-alignment on save
 - **Capability generation**: paste ORCID, Google Scholar, or ResearchGate URL; upload PDF/DOCX CV; LLM extracts structured capability areas
@@ -143,6 +143,6 @@ docker-compose.yml           Local network Docker deployment
 
 ## Database
 
-SQLite at `proposalpilot.db` (local) or `/data/proposalpilot.db` (Render disk).
+SQLite at `proposalpilot.db` (local) or `/data/proposalpilot2.db` (Render disk — `DB_PATH` env var).
 
 Tables: `solicitations`, `users`, `profiles`, `capabilities`, `projects`, `drafts`, `solicitation_capability_scores`, `search_keywords`, `agency_release_schedule`, `sota_cache`

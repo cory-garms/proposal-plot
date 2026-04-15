@@ -12,7 +12,7 @@ import csv
 import json
 import re
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 
 # Opportunity types we care about — skip awards, mods, justifications
 _KEEP_TYPES = {
@@ -124,8 +124,8 @@ def _keyword_match(text: str, keywords: list[str]) -> bool:
     return any(kw in text_lower for kw in keywords)
 
 
-def run_sam_csv_import(csv_path: str, max_results: int = 500) -> dict:
-    from backend.db.crud import get_all_keywords, upsert_solicitation
+def run_sam_csv_import(csv_path: str, max_results: int = 10000) -> dict:
+    from backend.db.crud import get_all_keywords, insert_solicitation_if_new
 
     path = Path(csv_path)
     if not path.exists():
@@ -143,9 +143,11 @@ def run_sam_csv_import(csv_path: str, max_results: int = 500) -> dict:
             "geospatial", "multispectral", "detection", "imaging",
         ]
 
+    today = date.today().isoformat()
     matched: list[dict] = []
     skipped_type = 0
     skipped_kw = 0
+    skipped_expired = 0
     total = 0
 
     with open(path, newline="", encoding="cp1252", errors="replace") as f:
@@ -165,6 +167,11 @@ def run_sam_csv_import(csv_path: str, max_results: int = 500) -> dict:
                 skipped_kw += 1
                 continue
 
+            close_date = _parse_date(row.get("ResponseDeadLine"))
+            if close_date and close_date < today:
+                skipped_expired += 1
+                continue
+
             dept = row.get("Department/Ind.Agency", "")
             subtier = row.get("Sub-Tier", "")
             notice_id = row.get("NoticeId", "").strip()
@@ -177,9 +184,9 @@ def run_sam_csv_import(csv_path: str, max_results: int = 500) -> dict:
                 "title": title,
                 "topic_number": row.get("Sol#", "").strip() or None,
                 "description": description[:8000],
-                "deadline": _parse_date(row.get("ResponseDeadLine")),
+                "deadline": close_date,
                 "open_date": _parse_date(row.get("PostedDate")),
-                "close_date": _parse_date(row.get("ResponseDeadLine")),
+                "close_date": close_date,
                 "release_date": None,
                 "vehicle_type": _parse_vehicle_type(notice_type),
                 "branch": _extract_branch(dept, subtier),
@@ -193,26 +200,31 @@ def run_sam_csv_import(csv_path: str, max_results: int = 500) -> dict:
     matched.sort(key=lambda r: r["open_date"] or "", reverse=True)
     matched = matched[:max_results]
 
-    persisted = errors = 0
+    inserted = skipped_existing = errors = 0
     for record in matched:
         if not record["title"] or not record["url"]:
             continue
         try:
-            upsert_solicitation(record)
-            persisted += 1
+            if insert_solicitation_if_new(record):
+                inserted += 1
+            else:
+                skipped_existing += 1
         except Exception as e:
-            print(f"  [upsert error] {record['title'][:60]}: {e}")
+            print(f"  [insert error] {record['title'][:60]}: {e}")
             errors += 1
 
     print(
         f"SAM CSV import: {total} rows scanned, {skipped_type} skipped (type), "
-        f"{skipped_kw} skipped (no keyword match), {len(matched)} matched, "
-        f"{persisted} persisted, {errors} errors"
+        f"{skipped_kw} skipped (no keyword match), {skipped_expired} skipped (expired), "
+        f"{len(matched)} matched, {inserted} inserted (new), "
+        f"{skipped_existing} skipped (already in db), {errors} errors"
     )
     return {
         "rows_scanned": total,
         "keyword_matches": len(matched),
-        "persisted": persisted,
+        "inserted": inserted,
+        "skipped_existing": skipped_existing,
+        "skipped_expired": skipped_expired,
         "errors": errors,
     }
 
@@ -224,5 +236,5 @@ if __name__ == "__main__":
     from backend.database import init_db
     init_db()
     csv_file = sys.argv[1] if len(sys.argv) > 1 else "SAM_ContractOpportunitiesFull.csv"
-    max_r = int(sys.argv[2]) if len(sys.argv) > 2 else 500
+    max_r = int(sys.argv[2]) if len(sys.argv) > 2 else 10000
     run_sam_csv_import(csv_file, max_r)

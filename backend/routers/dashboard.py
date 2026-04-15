@@ -54,11 +54,20 @@ def get_dashboard_summary(
     profile_id: Optional[int] = Query(None),
     user: dict | None = Depends(get_current_user),
 ):
-    # Derive profiles visible to this user
+    # Derive profiles to display scores for.
+    # When a specific profile_id is requested (admin "viewing as" another user),
+    # load that profile + shared profiles only — not the admin's own personal scores.
+    # Otherwise show the current user's own profiles + shared profiles.
     user_id = user["id"] if user else None
-    profiles = get_all_profiles(user_id=user_id)
+    is_admin = user.get("is_admin") if user else False
 
-    # Fetch scores for all visible profiles
+    if profile_id and is_admin:
+        all_profiles = get_all_profiles(include_all=True)
+        profiles = [p for p in all_profiles if p["id"] == profile_id or p.get("shared")]
+    else:
+        profiles = get_all_profiles(user_id=user_id)
+
+    # Fetch scores for display profiles only
     profile_score_maps = {
         p["id"]: {
             "name": p["name"],
@@ -67,9 +76,7 @@ def get_dashboard_summary(
         for p in profiles
     }
 
-    # Admin can pass profile_id to set the primary sort profile.
-    # Otherwise use the first owned (non-shared) profile — but if it has no scores,
-    # fall back to the shared SSI profile so the dashboard isn't empty on first login.
+    # Determine primary sort profile
     if profile_id and any(p["id"] == profile_id for p in profiles):
         primary_id = str(profile_id)
     else:
@@ -77,7 +84,6 @@ def get_dashboard_summary(
         if own_profile and profile_score_maps.get(own_profile["id"], {}).get("map"):
             primary_id = str(own_profile["id"])
         else:
-            # No personal scores yet — sort by shared profile (SSI)
             shared_profile = next((p for p in profiles if p.get("shared")), None)
             fallback = shared_profile or own_profile or (profiles[0] if profiles else None)
             primary_id = str(fallback["id"]) if fallback else "1"
@@ -108,9 +114,10 @@ def get_dashboard_summary(
         if c_date and c_date < sixty_days_ago:
             continue
 
-        # Build per-profile score lists and find overall best
+        # Build per-profile score lists
         sol_profiles = []
         best = 0.0
+        combined = 0.0
         for pid, pdata in profile_score_maps.items():
             scores = [s for s in pdata["map"].get(sol["id"], []) if s["score"] > 0]
             top = max((s["score"] for s in scores), default=0.0)
@@ -122,6 +129,7 @@ def get_dashboard_summary(
                     "top": top,
                 })
             best = max(best, top)
+            combined += top
 
         if best < MIN_SCORE:
             continue
@@ -129,6 +137,7 @@ def get_dashboard_summary(
         sol["profile_scores"] = sol_profiles
         sol["score_color"] = _score_color(best)
         sol["best_score"] = best
+        sol["combined_score"] = combined
 
         is_closed = bool(c_date and c_date < today_str)
         is_open = not is_closed and (not o_date or o_date <= today_str)
@@ -152,7 +161,7 @@ def get_dashboard_summary(
                 closing_soon.append(sol)
 
     def by_score(lst):
-        return sorted(lst, key=lambda s: s.get("best_score", 0), reverse=True)[:MAX_PER_SECTION]
+        return sorted(lst, key=lambda s: s.get("combined_score", 0), reverse=True)[:MAX_PER_SECTION]
 
     return {
         "tpoc_window": by_score(tpoc_window),

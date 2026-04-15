@@ -191,7 +191,7 @@ def fetch_detail(opp_id: str) -> dict:
 
 
 def run_grants_scrape(max_results: int = 200, delay: float = 0.5) -> dict:
-    from backend.db.crud import get_all_keywords, upsert_solicitation
+    from backend.db.crud import get_all_keywords, insert_solicitation_if_new
 
     keywords = [k["keyword"] for k in get_all_keywords(active_only=True)]
     queries = _build_search_queries(keywords)
@@ -213,7 +213,7 @@ def run_grants_scrape(max_results: int = 200, delay: float = 0.5) -> dict:
     hits = hits[:max_results]
     print(f"\nFetching details for {len(hits)} opportunities...")
 
-    persisted = errors = 0
+    persisted = skipped = errors = 0
     for opp in hits:
         opp_id = str(opp["id"])
         detail = fetch_detail(opp_id)
@@ -241,14 +241,16 @@ def run_grants_scrape(max_results: int = 200, delay: float = 0.5) -> dict:
         }
 
         try:
-            upsert_solicitation(record)
-            persisted += 1
+            if insert_solicitation_if_new(record):
+                persisted += 1
+            else:
+                skipped += 1
         except Exception as e:
-            print(f"  [upsert error] {opp.get('title', opp_id)}: {e}")
+            print(f"  [insert error] {opp.get('title', opp_id)}: {e}")
             errors += 1
 
-    print(f"\nDone. Persisted: {persisted}, Errors: {errors}")
-    return {"persisted": persisted, "errors": errors, "queries_run": len(queries)}
+    print(f"\nDone. Inserted: {persisted} new, {skipped} already in db, Errors: {errors}")
+    return {"inserted": persisted, "skipped_existing": skipped, "errors": errors, "queries_run": len(queries)}
 
 
 if __name__ == "__main__":

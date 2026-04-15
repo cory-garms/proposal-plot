@@ -1,6 +1,6 @@
 # HANDOFF
 
-**Last updated:** 2026-04-10 (Sprint 10 day 1 — Claude)
+**Last updated:** 2026-04-15 (Sprint 10 day 3 — Claude)
 
 ---
 
@@ -13,22 +13,35 @@
 - DB path on Render: `/data/proposalpilot2.db` (changed from `.db` during corruption recovery — `DB_PATH` env var set in Render dashboard)
 - Users in DB: cgarms (admin), rpanfili, dstelter, rtaylor, jgrassi — all `Welcome!2026`
 
-**Sprint 10 remaining goal: send beta invites to rpanfili, dstelter, rtaylor next week.**
+**Sprint 10 remaining goal: send beta invites to rpanfili, dstelter, rtaylor.**
 
 ### Sprint 10 Plan (Remaining)
 
-**Day 2 — Scrape fresh solicitations on Render**
-- Trigger SAM scrape from Admin page (live Render backend, real API)
-- Run alignment for Spectral Sciences shared profile
-- Verify nightly scheduler is showing a next-run time in Admin
+**Day 2 (complete) — DOD SBIR/STTR scraper**
+- `dod_scraper.py` now exposed at `POST /solicitations/scrape/dod`
+- Admin UI has a dedicated DOD SBIR/STTR card (no max input — always fetches all 115 open topics)
+- 115 new DOD topics loaded locally
+- **Still needed:** push to GitHub → Render auto-deploy → run DOD scrape + alignment on live instance
 
-**Day 3 — Beta onboarding prep**
-- Write beta invite email (URL, temp password `Welcome!2026`, 3-step quick-start)
+**Day 3 (complete) — DB cleanup, bug fixes, Solicitations page overhaul**
+- DB purge script written: `python -m backend.scraper.purge_solicitations [--commit]`
+  - Phases: expired unscored SAM, SAM dedup by topic_number, SBIR.gov (old dev data), zero-score SAM
+  - Projected: 9,995 → ~690 solicitations after commit
+- Bug fixes: Solicitations page `profileId` key mismatch (now resolves correctly for all users); Dashboard `get_all_profiles` was returning admin's own profile instead of viewed-as user's profile
+- Solicitations page: two alignment columns (You / SSI), three sort modes (You / SSI / Combined); DOD source filter + badge added; non-admin users no longer need "Viewing as" dropdown to see their own scores
+- Dashboard: `by_score` now sorts by `combined_score` (personal top + SSI top)
+- DOD SBIR/STTR: `POST /solicitations/scrape/dod` + Admin card wired in; 115 open topics in local DB
 
-**Day 4 — Send invites, monitor**
-- Email rpanfili@spectral.com, dstelter@spectral.com, rtaylor@spectral.com
-- Monitor Render logs for 401s, errors, slow queries
-- Password reset if needed: Render Shell → `python -m backend.scraper.reset_beta_users`
+**Day 4 — Push, clean live DB, onboard Raphael**
+- Push to GitHub → Render auto-deploy + GitHub Pages auto-deploy
+- SSH Render: run `python -m backend.scraper.purge_solicitations --commit` (once scorer finishes)
+- SSH Render: run `python -m backend.scraper.reset_beta_users` to wipe test data
+- Trigger DOD scrape + alignment from Admin page on live backend
+- Send Raphael onboarding doc + invite email
+- Monitor Render logs for 401s, errors
+
+### Before pushing — finish locally
+- [ ] Scorer must finish before running purge (stop it if still running, run purge, then re-score ~690 records)
 
 ### Known Issues / Deferred
 - **Capability auto-score on edit** — background alignment on `PATCH /capabilities/{id}` not verified end-to-end on production

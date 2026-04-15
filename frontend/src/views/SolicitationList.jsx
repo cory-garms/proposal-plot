@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getSolicitations, triggerScrape, getScrapeStatus, watchSolicitation } from '../api/client'
+import { getSolicitations, triggerScrape, getScrapeStatus, watchSolicitation, getProfiles } from '../api/client'
 
 const SCORE_BADGE = (score) => {
   if (score === null || score === undefined) return 'bg-gray-100 text-gray-500'
@@ -83,16 +83,30 @@ export default function SolicitationList() {
   const [savedTab, setSavedTab] = useState(false)
   const [sourceFilter, setSourceFilter] = useState('')
   const [pageSize, setPageSize] = useState(25)
+  const [resolvedProfileId, setResolvedProfileId] = useState(null)
 
-  const fetchPage = useCallback(async (pageNum, agency, status, sort, saved, source, size) => {
+  useEffect(() => {
+    const isAdmin = sessionStorage.getItem('is_admin') === 'true'
+    if (isAdmin) {
+      const stored = localStorage.getItem('adminProfileId')
+      if (stored) { setResolvedProfileId(stored); return }
+    }
+    getProfiles().then(ps => {
+      const own = ps.find(p => !p.shared)
+      const id = own ? String(own.id) : ps[0] ? String(ps[0].id) : '1'
+      setResolvedProfileId(id)
+    }).catch(() => setResolvedProfileId('1'))
+  }, [])
+
+  const fetchPage = useCallback(async (pageNum, agency, status, sort, saved, source, size, profileId) => {
+    if (!profileId) return
     setLoading(true)
     try {
-      const profileId = localStorage.getItem('profileId') || '1'
       const params = {
         limit: size,
         offset: pageNum * size,
         profile_id: profileId,
-        exclude_expired: saved ? false : true,
+        exclude_expired: !saved,
       }
       if (agency) params.agency = agency
       if (status) params.status_filter = status
@@ -102,6 +116,8 @@ export default function SolicitationList() {
       if (sort === 'deadlineAsc') { params.sort_by = 'deadline'; params.sort_desc = false }
       if (sort === 'deadlineDesc') { params.sort_by = 'deadline'; params.sort_desc = true }
       if (sort === 'alignmentDesc') { params.sort_by = 'alignment'; params.sort_desc = true }
+      if (sort === 'alignmentCompanyDesc') { params.sort_by = 'alignment_company'; params.sort_desc = true }
+      if (sort === 'alignmentCombinedDesc') { params.sort_by = 'alignment_combined'; params.sort_desc = true }
 
       const data = await getSolicitations(params)
       setSolicitations(data)
@@ -115,8 +131,8 @@ export default function SolicitationList() {
   }, [])
 
   useEffect(() => {
-    fetchPage(page, agencyFilter, statusFilter, sortMode, savedTab, sourceFilter, pageSize)
-  }, [page, agencyFilter, statusFilter, sortMode, savedTab, sourceFilter, pageSize, fetchPage])
+    fetchPage(page, agencyFilter, statusFilter, sortMode, savedTab, sourceFilter, pageSize, resolvedProfileId)
+  }, [page, agencyFilter, statusFilter, sortMode, savedTab, sourceFilter, pageSize, resolvedProfileId, fetchPage])
 
   const handleWatch = async (e, sol) => {
     e.stopPropagation()
@@ -146,7 +162,7 @@ export default function SolicitationList() {
           clearInterval(poll)
           setScraping(false)
           setScrapeMsg(`Done. ${status.last_count ?? 0} solicitations updated.`)
-          fetchPage(0, agencyFilter, statusFilter, sortMode, savedTab)
+          fetchPage(0, agencyFilter, statusFilter, sortMode, savedTab, sourceFilter, pageSize, resolvedProfileId)
           setPage(0)
         }
       }, 2000)
@@ -197,7 +213,9 @@ export default function SolicitationList() {
             className="border border-gray-300 rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="">Newest Scraped</option>
-            <option value="alignmentDesc">Top Alignment</option>
+            <option value="alignmentCombinedDesc">Top Alignment (Combined)</option>
+            <option value="alignmentDesc">Top Alignment (You)</option>
+            <option value="alignmentCompanyDesc">Top Alignment (SSI)</option>
             <option value="deadlineAsc">Deadline (Soonest)</option>
             <option value="deadlineDesc">Deadline (Latest)</option>
           </select>
@@ -207,6 +225,7 @@ export default function SolicitationList() {
             className="border border-gray-300 rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="">All Sources</option>
+            <option value="dod">DOD SBIR/STTR</option>
             <option value="sbir">SBIR.gov</option>
             <option value="grants">Grants.gov</option>
             <option value="sam">SAM.gov</option>
@@ -286,7 +305,8 @@ export default function SolicitationList() {
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">TPOC</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-32">Deadline</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 w-20">Source</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-44">Top Alignment</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Alignment (You)</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Alignment (SSI)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -314,6 +334,7 @@ export default function SolicitationList() {
                     <td className="px-4 py-3">
                       {sol.source && (
                         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          sol.source === 'dod'    ? 'bg-red-50 text-red-700' :
                           sol.source === 'sbir'   ? 'bg-blue-50 text-blue-600' :
                           sol.source === 'grants' ? 'bg-green-50 text-green-700' :
                           sol.source === 'sam'    ? 'bg-purple-50 text-purple-700' :
@@ -324,10 +345,20 @@ export default function SolicitationList() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {sol.top_alignment_score !== null && sol.top_alignment_score !== undefined ? (
+                      {sol.top_alignment_score != null ? (
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${SCORE_BADGE(sol.top_alignment_score)}`}>
                           <span className="font-mono">{sol.top_alignment_score.toFixed(2)}</span>
                           <span>{sol.top_capability}</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {sol.top_alignment_score_company != null ? (
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${SCORE_BADGE(sol.top_alignment_score_company)}`}>
+                          <span className="font-mono">{sol.top_alignment_score_company.toFixed(2)}</span>
+                          <span>{sol.top_capability_company}</span>
                         </span>
                       ) : (
                         <span className="text-gray-300 text-xs">-</span>

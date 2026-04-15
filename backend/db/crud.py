@@ -14,6 +14,18 @@ def _content_hash(data: dict) -> str:
 # Solicitations
 # ---------------------------------------------------------------------------
 
+def insert_solicitation_if_new(data: dict) -> bool:
+    """Insert solicitation only if its URL doesn't already exist. Returns True if inserted."""
+    data = {**data, "content_hash": _content_hash(data)}
+    sql = """
+        INSERT OR IGNORE INTO solicitations (agency, title, topic_number, description, deadline, open_date, close_date, release_date, vehicle_type, branch, tpoc_json, url, raw_html, source, content_hash)
+        VALUES (:agency, :title, :topic_number, :description, :deadline, :open_date, :close_date, :release_date, :vehicle_type, :branch, :tpoc_json, :url, :raw_html, :source, :content_hash)
+    """
+    with get_connection() as conn:
+        cur = conn.execute(sql, data)
+        return cur.rowcount > 0
+
+
 def upsert_solicitation(data: dict) -> int:
     """Insert or update a solicitation by URL. Returns the row id."""
     data = {**data, "content_hash": _content_hash(data)}
@@ -53,17 +65,23 @@ def get_all_solicitations(
     sort_desc: bool = False,
     status_filter: Optional[str] = None,
     profile_id: Optional[str] = "1",
+    shared_profile_id: Optional[str] = None,
     watched_only: bool = False,
     source: Optional[str] = None,
 ) -> list[dict]:
+    spid = shared_profile_id or profile_id
     sql = """
-        SELECT s.*, 
+        SELECT s.*,
             (SELECT MAX(sc.score) FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ?) as top_alignment_score,
-            (SELECT c.name FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ? ORDER BY sc.score DESC LIMIT 1) as top_capability
+            (SELECT c.name FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ? ORDER BY sc.score DESC LIMIT 1) as top_capability,
+            (SELECT MAX(sc.score) FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ?) as top_alignment_score_company,
+            (SELECT c.name FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ? ORDER BY sc.score DESC LIMIT 1) as top_capability_company,
+            COALESCE((SELECT MAX(sc.score) FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ?), 0)
+            + COALESCE((SELECT MAX(sc.score) FROM solicitation_capability_scores sc JOIN capabilities c ON c.id = sc.capability_id WHERE sc.solicitation_id = s.id AND c.profile_id = ?), 0) as combined_alignment_score
         FROM solicitations s
         WHERE 1=1
     """
-    params: list = [profile_id, profile_id]
+    params: list = [profile_id, profile_id, spid, spid, profile_id, spid]
 
     if watched_only:
         sql += " AND s.watched = 1"
@@ -90,6 +108,10 @@ def get_all_solicitations(
 
     if sort_by == "alignment":
         sql += " ORDER BY top_alignment_score " + ("DESC" if sort_desc else "ASC") + " NULLS LAST"
+    elif sort_by == "alignment_company":
+        sql += " ORDER BY top_alignment_score_company " + ("DESC" if sort_desc else "ASC") + " NULLS LAST"
+    elif sort_by == "alignment_combined":
+        sql += " ORDER BY combined_alignment_score " + ("DESC" if sort_desc else "ASC")
     elif sort_by == "deadline":
         sql += " ORDER BY IFNULL(s.close_date, s.deadline) " + ("DESC" if sort_desc else "ASC") + " NULLS LAST"
     else:

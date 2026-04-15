@@ -107,6 +107,12 @@ export const triggerSamScrape = (params = {}) =>
 export const getSamScrapeStatus = () =>
   api.get('/solicitations/scrape/sam/status').then(r => r.data)
 
+export const triggerDodScrape = () =>
+  api.post('/solicitations/scrape/dod').then(r => r.data)
+
+export const getDodScrapeStatus = () =>
+  api.get('/solicitations/scrape/dod/status').then(r => r.data)
+
 export const runAlignment = (params = {}) =>
   api.post('/align/run', null, { params: { skip_scored: true, ...params } }).then(r => r.data)
 

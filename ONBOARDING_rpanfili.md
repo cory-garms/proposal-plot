@@ -14,7 +14,7 @@ You're the first external user. Your feedback on what's confusing, broken, or mi
 
 **Login:**
 - Email: `rpanfili@spectral.com`
-- Password: `Welcome!2026`
+- Password: `**********`
 
 Please change your password after your first login (top-right → *Change Password*).
 

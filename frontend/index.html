@@ -16,7 +16,8 @@
         // Also handle the ?p= query param from 404.html
         var p = window.location.search.slice(1).split('&').find(function(s) { return s.startsWith('p='); });
         if (p) {
-          var path = '/' + p.slice(2).replace(/~and~/g, '&');
+          var basePath = window.location.pathname.replace(/\/$/, '');
+          var path = basePath + '/' + p.slice(2).replace(/~and~/g, '&');
           var qs = window.location.search.slice(1).split('&').filter(function(s) { return !s.startsWith('p=') && !s.startsWith('q='); });
           var q = window.location.search.slice(1).split('&').find(function(s) { return s.startsWith('q='); });
           history.replaceState(null, null, path + (qs.length ? '?' + qs.join('&') : '') + (q ? '?' + q.slice(2).replace(/~and~/g, '&') : '') + window.location.hash);
